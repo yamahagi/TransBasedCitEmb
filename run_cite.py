@@ -35,14 +35,13 @@ import csv
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_dir', type=str, default='/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC',
-                        help="data directory path")
+    parser.add_argument('--data_dir', type=str, default='/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC',help="data directory path")
+    parser.add_argument('--dataset', type=str, default='AASC',help="AASC or PeerRead")
     parser.add_argument('--log_dir', type=str, default='./logs/',
                         help="fitlog directory path")
     parser.add_argument('--batch_size', type=int, default=32, help="batch size")
     parser.add_argument('--frequency', type=int, default=5, help="frequency to remove rare entity")
     parser.add_argument('--lr', type=float, default=5e-5, help="learning rate")
-    parser.add_argument('--ent_lr', type=float, default=5e-5, help="learning rate")
     parser.add_argument('--beta', type=float, default=0.999, help="beta_2 of adam")
     parser.add_argument('--weight_decay', type=float, default=0.01, help="weight decay")
     parser.add_argument('--warm_up', type=float, default=0.1, help="warmup proportion or steps")
@@ -52,9 +51,6 @@ def parse_args():
     parser.add_argument('--debug', action='store_true', help="do not log")
     parser.add_argument('--model_path', type=str, default="../model/",
                         help="the path of directory containing model and entity embeddings.")
-    parser.add_argument('--ent_dim', type=int, default=200, help="dimension of entity embeddings")
-    parser.add_argument('--ip_config', type=str, default='emb_ip.cfg')
-    parser.add_argument('--name', type=str, default='test', help="experiment name")
     parser.add_argument('--window_size', type=int, default=250, help="the length of context length")
     parser.add_argument('--MAX_LEN', type=int, default=512, help="MAX length of the input")
     parser.add_argument('--train', type=bool, default=True, help="train or not")
@@ -75,13 +71,9 @@ def main():
     tokenizer = BertTokenizer.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
     word_mask_index = tokenizer.mask_token_id
     word_vocab_size = len(tokenizer)
-    #path_train = os.path.join(args.data_dir,"train.txt")
-    #path_test = os.path.join(args.data_dir,"test.txt")
-    #train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir)
-    #train_set, test_set, ent_vocab = load_PeerRead_graph_data(args.data_dir,args.frequency)
     if args.dataset == "AASC":
         train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir,args.frequency,args.window_size,args.MAX_LEN)
-    elif args.dataset == "PeerRead":
+    else:
         train_set, test_set, ent_vocab = load_PeerRead_graph_data(args.data_dir,args.frequency,args.window_size,args.MAX_LEN)
 
 
@@ -93,7 +85,6 @@ def main():
     # load parameters
     model = PTBCN.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased',
 		    num_ent=len(ent_vocab),
-		    ent_lr=args.ent_lr,
                     MAX_LEN=args.MAX_LEN)
     model.change_type_embeddings()
     print('parameters of SciBERT has been loaded.')
@@ -143,26 +134,26 @@ def main():
         data_dir_modelname = os.path.basename(args.data_dir[:-1])
     else:
         data_dir_modelname = os.path.basename(args.data_dir)
-    model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(data_dir_modelname)+".bin"
+    model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+".bin"
     pretrained_model_path = os.path.join(args.model_path,model_name)
     print("train start")
     if args.train:
         for i in range(args.epoch):
-            model_name = "model_"+"epoch"+str(args.epoch-i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(data_dir_modelname)+".bin"
+            model_name = "model_"+"epoch"+str(args.epoch-i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+args.dataset+".bin"
             pretrained_model_path = os.path.join(args.model_path,model_name)
             if os.path.exists(pretrained_model_path):
                 model.load_state_dict(torch.load(pretrained_model_path))
                 for j in range(1,i+1):
                     trainer.train(load_best_model=False)
                     if args.epoch-i+j % 5 == 0:
-                        model_name = "model_"+"epoch"+str(args.epoch-i+j)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(data_dir_modelname)+".bin"
+                        model_name = "model_"+"epoch"+str(args.epoch-i+j)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+args.dataset+".bin"
                         torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
                 break
         else:
             for i in range(1,args.epoch+1):
                 trainer.train(load_best_model=False)
                 if i % 5 == 0:
-                    model_name = "model_"+"epoch"+str(i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(data_dir_modelname)+".bin"
+                    model_name = "model_"+"epoch"+str(i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+args.dataset+".bin"
                     torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
     print("train end")
     trainer._load_model(model,"DataParallel_2021-01-29-17-29-35-606006")

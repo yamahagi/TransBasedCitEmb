@@ -9,7 +9,7 @@ import numpy as np
 class PTBCN(BertForMaskedLM):
     config_class = BertConfig
     base_model_prefix = "bert"
-    def __init__(self, config, num_ent, ent_lr, MAX_LEN):
+    def __init__(self, config, num_ent, MAX_LEN):
         super().__init__(config)
         self.ent_lm_head = EntLMHead(config,num_ent)
         self.ent_embeddings = nn.Embedding(num_ent, 768, padding_idx=0)
