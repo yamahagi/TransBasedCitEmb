@@ -51,7 +51,7 @@ def parse_args():
     parser.add_argument('--debug', action='store_true', help="do not log")
     parser.add_argument('--model_path', type=str, default="../model/",
                         help="the path of directory containing model and entity embeddings.")
-    parser.add_argument('--window_size', type=int, default=250, help="the length of context length")
+    parser.add_argument('--WINDOW_SIZE', type=int, default=250, help="the length of context length")
     parser.add_argument('--MAX_LEN', type=int, default=512, help="MAX length of the input")
     parser.add_argument('--train', type=bool, default=True, help="train or not")
     parser.add_argument('--predict', type=bool, default=True, help="predict or not")
@@ -72,9 +72,9 @@ def main():
     word_mask_index = tokenizer.mask_token_id
     word_vocab_size = len(tokenizer)
     if args.dataset == "AASC":
-        train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir,args.frequency,args.window_size,args.MAX_LEN)
+        train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir,args.frequency,args.WINDOW_SIZE,args.MAX_LEN)
     else:
-        train_set, test_set, ent_vocab = load_PeerRead_graph_data(args.data_dir,args.frequency,args.window_size,args.MAX_LEN)
+        train_set, test_set, ent_vocab = load_PeerRead_graph_data(args.data_dir,args.frequency,args.WINDOW_SIZE,args.MAX_LEN)
 
 
 

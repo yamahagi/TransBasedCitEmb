@@ -13,14 +13,14 @@ WORD_PADDING_INDEX = 1
 ENTITY_PADDING_INDEX = 1
 
 class PeerReadDataSet(Dataset):
-    def __init__(self, path, ent_vocab, window_size, MAX_LEN):
+    def __init__(self, path, ent_vocab, WINDOW_SIZE, MAX_LEN):
         self.path = path
         self.dirname = os.path.dirname(path)
         self.filename = os.path.basename(path)
         self.data = []
         self.tokenizer =  BertTokenizer.from_pretrained('pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
         df = pd.read_csv(path)
-        jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(window_size)+"_MAXLEN"+str(MAX_LEN)+".json")
+        jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(WINDOW_SIZE)+"_MAXLEN"+str(MAX_LEN)+".json")
         if os.path.exists(jsonpath):
             fids = open(jsonpath)
             dl = json.load(fids)
@@ -111,14 +111,14 @@ class PeerReadDataSet(Dataset):
         return (batch_x, batch_y)
 
 class AASCDataSet(Dataset):
-    def __init__(self, path, ent_vocab,window_size,MAX_LEN):
+    def __init__(self, path, ent_vocab,WINDOW_SIZE,MAX_LEN):
         self.path = path
         self.dirname = os.path.dirname(path)
         self.filename = os.path.basename(path)
         self.data = []
         self.tokenizer =  BertTokenizer.from_pretrained('pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
         df = pd.read_csv(path,quotechar="'")
-        jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(window_size)+"_MAXLEN"+str(MAX_LEN)+"_TBCN.json")
+        jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(WINDOW_SIZE)+"_MAXLEN"+str(MAX_LEN)+"_TBCN.json")
         if os.path.exists(jsonpath):
             fids = open(jsonpath)
             dl = json.load(fids)
@@ -210,7 +210,7 @@ class AASCDataSet(Dataset):
 
 
 #入力: directory
-def load_PeerRead_graph_data(path,frequency,window_size,MAX_LEN):
+def load_PeerRead_graph_data(path,frequency,WINDOW_SIZE,MAX_LEN):
     def extract_by_frequency(path_train, path_test,frequency):
         dftrain = pd.read_csv(path_train)
         dftest = pd.read_csv(path_test)
@@ -255,14 +255,14 @@ def load_PeerRead_graph_data(path,frequency,window_size,MAX_LEN):
     path_test = os.path.join(path,"test.csv")
     entvocab = build_ent_vocab(path_train)
     path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,frequency)
-    dataset_train = PeerReadDataSet(path_train,ent_vocab=entvocab,window_size=window_size,MAX_LEN=MAX_LEN)
-    dataset_test = PeerReadDataSet(path_test,ent_vocab=entvocab,window_size=window_size,MAX_LEN=MAX_LEN)
-    dataset_train_frequency5 = PeerReadDataSet(path_train_frequency5,ent_vocab=entvocab,window_size=window_size,MAX_LEN=MAX_LEN)
-    dataset_test_frequency5 = PeerReadDataSet(path_test_frequency5,ent_vocab=entvocab,window_size=window_size,MAX_LEN=MAX_LEN)
+    dataset_train = PeerReadDataSet(path_train,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN)
+    dataset_test = PeerReadDataSet(path_test,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN)
+    dataset_train_frequency5 = PeerReadDataSet(path_train_frequency5,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN)
+    dataset_test_frequency5 = PeerReadDataSet(path_test_frequency5,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN)
     return dataset_train,dataset_test_frequency5,entvocab
 
 #入力: directory
-def load_AASC_graph_data(path,frequency,window_size,MAX_LEN):
+def load_AASC_graph_data(path,frequency,WINDOW_SIZE,MAX_LEN):
     def extract_by_frequency(path_train, path_test,frequency):
         dftrain = pd.read_csv(path_train,quotechar="'")
         dftest = pd.read_csv(path_test,quotechar="'")
@@ -307,10 +307,10 @@ def load_AASC_graph_data(path,frequency,window_size,MAX_LEN):
     path_test = os.path.join(path,"test.csv")
     entvocab = build_ent_vocab(path_train)
     path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,frequency)
-    dataset_train = AASCDataSet(path_train,ent_vocab=entvocab,window_size,MAX_LEN)
-    dataset_test = AASCDataSet(path_test,ent_vocab=entvocab,window_size,MAX_LEN)
-    dataset_train_frequency5 = AASCDataSet(path_train_frequency5,ent_vocab=entvocab,window_size,MAX_LEN)
-    dataset_test_frequency5 = AASCDataSet(path_test_frequency5,ent_vocab=entvocab,window_size,MAX_LEN)
+    dataset_train = AASCDataSet(path_train,ent_vocab=entvocab,WINDOW_SIZE,MAX_LEN)
+    dataset_test = AASCDataSet(path_test,ent_vocab=entvocab,WINDOW_SIZE,MAX_LEN)
+    dataset_train_frequency5 = AASCDataSet(path_train_frequency5,ent_vocab=entvocab,WINDOW_SIZE,MAX_LEN)
+    dataset_test_frequency5 = AASCDataSet(path_test_frequency5,ent_vocab=entvocab,WINDOW_SIZE,MAX_LEN)
     print("----loading data done----")
     return dataset_train,dataset_test,entvocab
 
