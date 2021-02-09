@@ -56,6 +56,7 @@ def parse_args():
     parser.add_argument('--train', type=bool, default=True, help="train or not")
     parser.add_argument('--predict', type=bool, default=True, help="predict or not")
     parser.add_argument('--node_classification', type=bool, default=True, help="conduct node classification or not")
+    parser.add_argument('--pretrained_model', type=str, default="scibert", help="scibert or bert")
     return parser.parse_args()
 
 
@@ -68,13 +69,16 @@ def main():
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
     #word_mask_indexを取得？
-    tokenizer = BertTokenizer.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
+    if args.pretrained_model == "scibert":
+        tokenizer = BertTokenizer.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
+    else:
+        tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case =False)
     word_mask_index = tokenizer.mask_token_id
     word_vocab_size = len(tokenizer)
     if args.dataset == "AASC":
-        train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir,args.frequency,args.WINDOW_SIZE,args.MAX_LEN)
+        train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir,args.frequency,args.WINDOW_SIZE,args.MAX_LEN,args.pretrained_model)
     else:
-        train_set, test_set, ent_vocab = load_PeerRead_graph_data(args.data_dir,args.frequency,args.WINDOW_SIZE,args.MAX_LEN)
+        train_set, test_set, ent_vocab = load_PeerRead_graph_data(args.data_dir,args.frequency,args.WINDOW_SIZE,args.MAX_LEN,args.pretrained_model)
 
 
 
@@ -83,9 +87,10 @@ def main():
     num_ent = len(ent_vocab)
 
     # load parameters
-    model = PTBCN.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased',
-		    num_ent=len(ent_vocab),
-                    MAX_LEN=args.MAX_LEN)
+    if args.pretrained_model == "scibert":
+        model = PTBCN.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased',num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN)
+    else:
+        model = PTBCN.from_pretrained('bert-base-uncased',num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN)
     model.change_type_embeddings()
     print('parameters of SciBERT has been loaded.')
 
