@@ -139,29 +139,27 @@ def main():
         data_dir_modelname = os.path.basename(args.data_dir[:-1])
     else:
         data_dir_modelname = os.path.basename(args.data_dir)
-    model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+".bin"
+    model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+".bin"
     pretrained_model_path = os.path.join(args.model_path,model_name)
     print("train start")
     if args.train:
         for i in range(args.epoch):
-            model_name = "model_"+"epoch"+str(args.epoch-i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+args.dataset+".bin"
+            model_name = "model_"+"epoch"+str(args.epoch-i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+".bin"
             pretrained_model_path = os.path.join(args.model_path,model_name)
             if os.path.exists(pretrained_model_path):
                 model.load_state_dict(torch.load(pretrained_model_path))
                 for j in range(1,i+1):
                     trainer.train(load_best_model=False)
-                    if args.epoch-i+j % 5 == 0:
-                        model_name = "model_"+"epoch"+str(args.epoch-i+j)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+args.dataset+".bin"
-                        torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
+                    model_name = "model_"+"epoch"+str(args.epoch-i+j)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+".bin"
+                    torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
                 break
         else:
             for i in range(1,args.epoch+1):
                 trainer.train(load_best_model=False)
-                if i % 5 == 0:
-                    model_name = "model_"+"epoch"+str(i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+args.dataset+".bin"
-                    torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
+                model_name = "model_"+"epoch"+str(i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+".bin"
+                torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
     print("train end")
-    trainer._load_model(model,"DataParallel_2021-01-29-17-29-35-606006")
+    #trainer._load_model(model,"DataParallel_2021-01-29-17-29-35-606006")
 
     #test
     testloader = torch.utils.data.DataLoader(test_set,batch_size=args.batch_size,shuffle=False,num_workers=1)
@@ -175,11 +173,14 @@ def main():
     l_all = 0
     l_prev = 0
     if args.predict:
+        model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+".bin"
+        pretrained_model_path = os.path.join(args.model_path,model_name)
+        model.load_state_dict(torch.load(pretrained_model_path))
         fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(args.epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+".txt","w")
         with torch.no_grad():
             for (inputs,labels) in test_data_iter:
                 outputs = model(input_ids=inputs["input_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),masked_lm_labels=inputs["masked_lm_labels"].cuda(),attention_mask=inputs["attention_mask"].cuda())
-                 MAP,mrr,Recallat5,Recallat10,Recallat30,Recallat50,l = Evaluation(outputs["entity_logits"],inputs["masked_lm_labels"])
+                MAP,mrr,Recallat5,Recallat10,Recallat30,Recallat50,l = Evaluation(outputs["entity_logits"],inputs["masked_lm_labels"])
                 mrr_all += mrr
                 Recallat5_all += Recallat5
                 Recallat10_all += Recallat10

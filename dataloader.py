@@ -261,10 +261,10 @@ def load_PeerRead_graph_data(path,frequency,WINDOW_SIZE,MAX_LEN,pretrained_model
     path_test = os.path.join(path,"test.csv")
     entvocab = build_ent_vocab(path_train)
     path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,frequency)
-    dataset_train = PeerReadDataSet(path_train,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model)
-    dataset_test = PeerReadDataSet(path_test,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model)
-    dataset_train_frequency5 = PeerReadDataSet(path_train_frequency5,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model)
-    dataset_test_frequency5 = PeerReadDataSet(path_test_frequency5,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model)
+    dataset_train = PeerReadDataSet(path_train,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
+    dataset_test = PeerReadDataSet(path_test,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
+    dataset_train_frequency5 = PeerReadDataSet(path_train_frequency5,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
+    dataset_test_frequency5 = PeerReadDataSet(path_test_frequency5,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
     return dataset_train,dataset_test_frequency5,entvocab
 
 #入力: directory
@@ -313,12 +313,12 @@ def load_AASC_graph_data(path,frequency,WINDOW_SIZE,MAX_LEN,pretrained_model):
     path_test = os.path.join(path,"test.csv")
     entvocab = build_ent_vocab(path_train)
     path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,frequency)
-    dataset_train = AASCDataSet(path_train,ent_vocab=entvocab,WINDOW_SIZE,MAX_LEN,pretrained_model)
-    dataset_test = AASCDataSet(path_test,ent_vocab=entvocab,WINDOW_SIZE,MAX_LEN,pretrained_model)
-    dataset_train_frequency5 = AASCDataSet(path_train_frequency5,ent_vocab=entvocab,WINDOW_SIZE,MAX_LEN,pretrained_model)
-    dataset_test_frequency5 = AASCDataSet(path_test_frequency5,ent_vocab=entvocab,WINDOW_SIZE,MAX_LEN,pretrained_model)
+    dataset_train = AASCDataSet(path_train,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
+    dataset_test = AASCDataSet(path_test,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
+    dataset_train_frequency5 = AASCDataSet(path_train_frequency5,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
+    dataset_test_frequency5 = AASCDataSet(path_test_frequency5,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
     print("----loading data done----")
-    return dataset_train,dataset_test,entvocab
+    return dataset_train,dataset_test_frequency5,entvocab
 
 #AASCのnode classificationデータを読み込む^
 def load_data_SVM(model,entvocab):
