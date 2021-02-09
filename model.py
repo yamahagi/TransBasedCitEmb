@@ -93,23 +93,6 @@ def CrossEntropy(ent_logits_batch,masked_lm_labels_batch):
                 else:
                     loss += 1
 
-def confirm(ent_logits_batch,masked_lm_labels_batch):
-    ans = 0
-    mrr = 0
-    l = 0
-    for ent_logits,masked_lm_labels in zip(ent_logits_batch,masked_lm_labels_batch):
-        for i,masked_lm_label in enumerate(masked_lm_labels):
-            if masked_lm_label != -1:
-                ans = masked_lm_label
-                rank_array = torch.argsort(ent_logits[i])
-        for i in range(1,len(rank_array)+1):
-            rank = rank_array[-i]
-            if rank == ans:
-                mrr += 1/i
-                l += 1
-                break
-    return mrr,l
-
 
 def gelu(x):
     """ Original Implementation of the gelu activation function in Google Bert repo when initialy created.
