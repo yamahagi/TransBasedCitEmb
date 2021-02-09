@@ -18,113 +18,12 @@ from dataloader import SCIGraphDataSet,PeerReadDataSet,AASCDataSet
 from model import PTBCN,confirm
 from metrics import MacroMetric
 from metrics import MRR
-from utils import build_label_vocab, build_temp_ent_vocab
+from utils import build_label_vocab, build_temp_ent_vocab,build_ent_vocab
 from collections import Counter
 
 import pandas as pd
 import csv
 
-#入力: directory
-def load_PeerRead_graph_data(path,frequency):
-    def extract_by_frequency(path_train, path_test,frequency):
-        dftrain = pd.read_csv(path_train)
-        dftest = pd.read_csv(path_test)
-        source_cut_train = dftrain[['target_id', 'source_id']].drop_duplicates(subset=['target_id', 'source_id'])
-        source_cut_test = dftest[['target_id', 'source_id']].drop_duplicates(subset=['target_id', 'source_id'])
-        ftrain_fre = open(path_train[:-4]+"_frequency"+str(frequency)+".csv","w")
-        ftest_fre = open(path_test[:-4]+"_frequency"+str(frequency)+".csv","w")
-        wtrain = csv.writer(ftrain_fre)
-        wtest = csv.writer(ftest_fre)
-        wtrain.writerow(["target_id","left_citated_text","right_citated_text","source_id"])
-        wtest.writerow(["target_id","left_citated_text","right_citated_text","source_id"])
-        source_train_keys = source_cut_train.source_id.value_counts().keys()
-        source_test_keys = source_cut_test.source_id.value_counts().keys()
-        dic1 = {}
-        train_counts = source_cut_train.source_id.value_counts()
-        test_counts = source_cut_test.source_id.value_counts()
-        for key in source_train_keys:
-            dic1[key] = train_counts[key]
-        for key in source_test_keys:
-            if key in dic1:
-                dic1[key] += test_counts[key]
-            else:
-                dic1[key] = test_counts[key]
-        frequencylist = []
-        for key in dic1:
-            if dic1[key] >= frequency:
-                frequencylist.append(key)
-        dftrain = dftrain.loc[dftrain["source_id"].isin(frequencylist)]
-        dftest = dftest.loc[dftest["source_id"].isin(frequencylist)]
-        for target_id,left_citated_text,right_citated_text,source_id in zip(dftrain["target_id"],dftrain["left_citated_text"],dftrain["right_citated_text"],dftrain["source_id"]):
-            wtrain.writerow([target_id,left_citated_text,right_citated_text,source_id])
-        ftrain_fre.close()
-        for target_id,left_citated_text,right_citated_text,source_id in zip(dftest["target_id"],dftest["left_citated_text"],dftest["right_citated_text"],dftest["source_id"]):
-            wtest.writerow([target_id,left_citated_text,right_citated_text,source_id])
-        ftest_fre.close()
-        entitylist = list(set(list(dftrain["source_id"].values) + list(dftrain["target_id"].values) + list(dftest["source_id"].values) + list(dftest["target_id"].values)))
-        entvocab = {"UNKNOWN":0,"MASK":1}
-        for i,entity in enumerate(entitylist):
-            entvocab[entity] = i+2
-        return path_train[:-4]+"_frequency"+str(frequency)+".csv",path_test[:-4]+"_frequency"+str(frequency)+".csv",entvocab
-    path_train = os.path.join(path,"train.csv")
-    path_test = os.path.join(path,"test.csv")
-    path_train,path_test,entvocab = extract_by_frequency(path_train,path_test,frequency)
-    dataset_test = PeerReadDataSet(path_test,ent_vocab=entvocab)
-    print("test data load done")
-    dataset_train = PeerReadDataSet(path_train,ent_vocab=entvocab)
-    print("train data load done")
-    return dataset_train,dataset_test,entvocab
-
-#入力: directory
-def load_AASC_graph_data(path,frequency,window_size,MAX_LEN):
-    def extract_by_frequency(path_train, path_test,frequency):
-        dftrain = pd.read_csv(path_train,quotechar="'")
-        dftest = pd.read_csv(path_test,quotechar="'")
-        source_cut_train = dftrain[['target_id', 'source_id']].drop_duplicates(subset=['target_id', 'source_id'])
-        source_cut_test = dftest[['target_id', 'source_id']].drop_duplicates(subset=['target_id', 'source_id'])
-        ftrain_fre = open(path_train[:-4]+"_frequency"+str(frequency)+".csv","w")
-        ftest_fre = open(path_test[:-4]+"_frequency"+str(frequency)+".csv","w")
-        wtrain = csv.writer(ftrain_fre,quotechar="'")
-        wtest = csv.writer(ftest_fre,quotechar="'")
-        wtrain.writerow(["target_id","left_citated_text","right_citated_text","source_id"])
-        wtest.writerow(["target_id","left_citated_text","right_citated_text","source_id"])
-        source_train_keys = source_cut_train.source_id.value_counts().keys()
-        source_test_keys = source_cut_test.source_id.value_counts().keys()
-        dic1 = {}
-        train_counts = source_cut_train.source_id.value_counts()
-        test_counts = source_cut_test.source_id.value_counts()
-        for key in source_train_keys:
-            dic1[key] = train_counts[key]
-        for key in source_test_keys:
-            if key in dic1:
-                dic1[key] += test_counts[key]
-            else:
-                dic1[key] = test_counts[key]
-        frequencylist = []
-        for key in dic1:
-            if dic1[key] >= frequency:
-                frequencylist.append(key)
-        dftrain = dftrain.loc[dftrain["source_id"].isin(frequencylist)]
-        dftest = dftest.loc[dftest["source_id"].isin(frequencylist)]
-        for target_id,left_citated_text,right_citated_text,source_id in zip(dftrain["target_id"],dftrain["left_citated_text"],dftrain["right_citated_text"],dftrain["source_id"]):
-            wtrain.writerow([target_id,left_citated_text,right_citated_text,source_id])
-        ftrain_fre.close()
-        for target_id,left_citated_text,right_citated_text,source_id in zip(dftest["target_id"],dftest["left_citated_text"],dftest["right_citated_text"],dftest["source_id"]):
-            wtest.writerow([target_id,left_citated_text,right_citated_text,source_id])
-        ftest_fre.close()
-        entitylist = list(set(list(dftrain["source_id"].values) + list(dftrain["target_id"].values) + list(dftest["source_id"].values) + list(dftest["target_id"].values)))
-        entvocab = {"UNKNOWN":0,"MASK":1}
-        for i,entity in enumerate(entitylist):
-            entvocab[entity] = i+2
-        return path_train[:-4]+"_frequency"+str(frequency)+".csv",path_test[:-4]+"_frequency"+str(frequency)+".csv",entvocab
-    path_train = os.path.join(path,"train.csv")
-    path_test = os.path.join(path,"test.csv")
-    path_train_frequency5,path_test_frequency5,entvocab = extract_by_frequency(path_train,path_test,frequency)
-    dataset_test = AASCDataSet(path_test_frequency5,ent_vocab=entvocab,window_size,MAX_LEN)
-    print("test data load done")
-    dataset_train = AASCDataSet(path_train,ent_vocab=entvocab,window_size,MAX_LEN)
-    print("train data load done")
-    return dataset_train,dataset_test,entvocab
 
 def exploit_true_labels(masked_lm_labels_batch):
     true_labels = []
@@ -183,30 +82,33 @@ def main():
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
     #word_mask_indexを取得？
-    tokenizer = BertTokenizer.from_pretrained('pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
+    tokenizer = BertTokenizer.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
     word_mask_index = tokenizer.mask_token_id
     word_vocab_size = len(tokenizer)
     #path_train = os.path.join(args.data_dir,"train.txt")
     #path_test = os.path.join(args.data_dir,"test.txt")
     #train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir)
     #train_set, test_set, ent_vocab = load_PeerRead_graph_data(args.data_dir,args.frequency)
-    train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir,args.frequency,args.window_size,args.MAX_LEN)
+    if args.dataset == "AASC":
+        train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir,args.frequency,args.window_size,args.MAX_LEN)
+    elif args.dataset == "PeerRead":
+        train_set, test_set, ent_vocab = load_PeerRead_graph_data(args.data_dir,args.frequency,args.window_size,args.MAX_LEN)
 
 
 
     #load entity embeddings
-    #TODO 初期化をDoc2Vecで行う
+    #TODO 初期化をSPECTERで行う
     num_ent = len(ent_vocab)
 
     # load parameters
-    model = PTBCN.from_pretrained('pretrainedmodel/scibert_scivocab_uncased',
+    model = PTBCN.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased',
 		    num_ent=len(ent_vocab),
-		    ent_lr=args.ent_lr)
+		    ent_lr=args.ent_lr,
+                    MAX_LEN=args.MAX_LEN)
     model.change_type_embeddings()
     print('parameters of SciBERT has been loaded.')
 
     # fine-tune
-    #no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight', 'embedding']
     no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight', 'layer_norm.bias', 'layer_norm.weight']
     param_optimizer = list(model.named_parameters())
     optimizer_grouped_parameters = [
@@ -224,11 +126,8 @@ def main():
     else:
         print("GPU NO")
 
-    #fitlog_callback = FitlogCallback(tester=tester, log_loss_every=100, verbose=1)
     gradient_clip_callback = GradientClipCallback(clip_value=1, clip_type='norm')
     warmup_callback = WarmupCallback(warmup=args.warm_up, schedule='linear')
-    #emb_callback = EmbUpdateCallback(model.ent_embeddings)
-    #all_callbacks = [gradient_clip_callback, emb_callback]
 
     bsz = args.batch_size // args.grad_accumulation
     testloader = torch.utils.data.DataLoader(test_set,batch_size=2,shuffle=False,num_workers=4)
@@ -256,7 +155,6 @@ def main():
         data_dir_modelname = os.path.basename(args.data_dir)
     model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(data_dir_modelname)+".bin"
     pretrained_model_path = os.path.join(args.model_path,model_name)
-    print(model_name)
     print("train start")
     for i in range(args.epoch):
         model_name = "model_"+"epoch"+str(args.epoch-i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(data_dir_modelname)+".bin"
@@ -295,10 +193,6 @@ def main():
     print(mrr_all)
     print(l_all)
     print(mrr_all/l_all)
-    """
-    tester = Tester(data=test_data_iter, model=model, metrics=metrics, device=devices)
-    tester.test()
-    """
 
 
 if __name__ == '__main__':

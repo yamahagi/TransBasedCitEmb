@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import pandas as pd
 
 
 def build_label_vocab(data_dir, task_type='re'):
@@ -50,4 +51,12 @@ def build_temp_cite_vocab(path):
         if l[1] not in ent_vocab:
             ent_vocab[l[1]] = cur
             cur += 1
+    return ent_vocab
+
+def build_ent_vocab(path):
+    ent_vocab = {"UNKNOWN":0,"MASK":1}
+    df = pd.read_csv(path,quotechar="'")
+    entitylist = list(set(list(df["source_id"].values)+list(df["target_id"].values)))
+    for i,entity in enumerate(entitylist):
+        ent_vocab[entity] = i+2
     return ent_vocab

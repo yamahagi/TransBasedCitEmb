@@ -6,15 +6,14 @@ from transformers import BertForMaskedLM, BertConfig
 import math
 import numpy as np
 
-MAX_LEN = 512
-
 class PTBCN(BertForMaskedLM):
     config_class = BertConfig
     base_model_prefix = "bert"
-    def __init__(self, config, num_ent, ent_lr, emb_name="entity_emb"):
+    def __init__(self, config, num_ent, ent_lr, MAX_LEN):
         super().__init__(config)
         self.ent_lm_head = EntLMHead(config,num_ent)
         self.ent_embeddings = nn.Embedding(num_ent, 768, padding_idx=0)
+        self.MAX_LEN = MAX_LEN
         #self.apply(self._init_weights)
 
     def change_type_embeddings(self):
@@ -37,7 +36,7 @@ class PTBCN(BertForMaskedLM):
             input_id = input_ids[i]
             token_type_id = token_type_ids[i]
             emb = []
-            for j in range(MAX_LEN):
+            for j in range(self.MAX_LEN):
                 if token_type_id[j] == 0:
                     if input_id[j] != -1:
                         emb.append(self.bert.embeddings.word_embeddings(input_id[j]))

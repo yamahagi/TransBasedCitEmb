@@ -6,6 +6,7 @@ from transformers import RobertaTokenizer,BertTokenizer
 import re
 import pandas as pd
 import csv
+from utils import build_label_vocab, build_temp_ent_vocab,build_ent_vocab
 
 WORD_PADDING_INDEX = 1
 ENTITY_PADDING_INDEX = 1
@@ -19,15 +20,16 @@ WINDOW_SIZE = 100
 """
 
 class PeerReadDataSet(Dataset):
-    def __init__(self, path, ent_vocab):
+    def __init__(self, path, ent_vocab, window_size, MAX_LEN):
         self.path = path
         self.dirname = os.path.dirname(path)
         self.filename = os.path.basename(path)
         self.data = []
         self.tokenizer =  BertTokenizer.from_pretrained('pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
         df = pd.read_csv(path)
-        if os.path.exists(os.path.join(self.dirname,self.filename[:-4]+".json")):
-            fids = open(os.path.join(self.dirname,self.filename[:-4]+".json"))
+        jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(window_size)+"_MAXLEN"+str(MAX_LEN)+".json")
+        if os.path.exists(jsonpath):
+            fids = open(jsonpath)
             dl = json.load(fids)
             self.data = dl
         else:
@@ -63,7 +65,7 @@ class PeerReadDataSet(Dataset):
                     'position_ids': position_ids[:MAX_LEN],
                     'token_type_ids': token_type_ids[:MAX_LEN],
                 })
-            fids = open(os.path.join(self.dirname,self.filename[:-4]+".json"),"w")
+            fids = open(jsonpath,"w")
             json.dump(self.data,fids)
 
     def __len__(self):
@@ -116,15 +118,16 @@ class PeerReadDataSet(Dataset):
         return (batch_x, batch_y)
 
 class AASCDataSet(Dataset):
-    def __init__(self, path, ent_vocab):
+    def __init__(self, path, ent_vocab,window_size,MAX_LEN):
         self.path = path
         self.dirname = os.path.dirname(path)
         self.filename = os.path.basename(path)
         self.data = []
         self.tokenizer =  BertTokenizer.from_pretrained('pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
         df = pd.read_csv(path,quotechar="'")
-        if os.path.exists(os.path.join(self.dirname,self.filename[:-4]+"_TBCN.json")):
-            fids = open(os.path.join(self.dirname,self.filename[:-4]+"_TBCN.json"))
+        jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(window_size)+"_MAXLEN"+str(MAX_LEN)+"_TBCN.json")
+        if os.path.exists(jsonpath):
+            fids = open(jsonpath)
             dl = json.load(fids)
             self.data = dl
         else:
@@ -160,7 +163,7 @@ class AASCDataSet(Dataset):
                     'position_ids': position_ids[:MAX_LEN],
                     'token_type_ids': token_type_ids[:MAX_LEN],
                 })
-            fids = open(os.path.join(self.dirname,self.filename[:-4]+"_TBCN.json"),"w")
+            fids = open(jsonpath,"w")
             json.dump(self.data,fids)
 
     def __len__(self):
@@ -212,166 +215,111 @@ class AASCDataSet(Dataset):
             batch_y[k] = torch.tensor(v)
         return (batch_x, batch_y)
 
-class SCIGraphDataSet(Dataset):
-    def __init__(self, path, ent_vocab):
-        self.path = path
-        self.dirname = os.path.dirname(path)
-        self.filename = os.path.basename(path)
-        self.data = []
-        self.tokenizer =  BertTokenizer.from_pretrained('pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
-        f = open(path)
-        rACL = re.compile("ACLITE")
-        if os.path.exists(os.path.join(self.dirname,self.filename[:-4]+".json")):
-            fids = open(os.path.join(self.dirname,self.filename[:-4]+".json"))
-            dl = json.load(fids)
-            self.data = dl
-        else:
-            for i,line in enumerate(f):
-                if i %10000 == 0:
-                    print(i)
-                l = line.rstrip("\n").split("\t")
-                fromcite = l[0]
-                tocite = l[2]
-                citationcontext = l[1]
-                citationcontexts = []
-                curs = ""
-                citationcontexts_tmp = citationcontext.split()
-                for context in citationcontexts_tmp:
-                    if context == "targetCITE":
-                        if curs != "":
-                            citationcontexts.append(curs[:-1])
-                        citationcontexts.append(context)
-                        curs = ""
-                    elif re.search(rACL,context):
-                        if curs != "":
-                            citationcontexts.append(curs[:-1])
-                        citationcontexts.append(context)
-                        curs = ""
-                    elif context == "CITE-UNKNOWN":
-                        if curs != "":
-                            citationcontexts.append(curs[:-1])
-                        citationcontexts.append(context)
-                        curs = ""
-                    else:
-                        curs += context + " "
-                if curs != "":
-                    citationcontexts.append(curs)
-                citationcontextl = []
-                masked_ids = []
-                position_ids = []
-                token_type_ids = []
-                curposition = 0
-                citationcontextl.append(self.tokenizer.cls_token_id)
-                citationcontextl.append(ent_vocab[fromcite])
-                citationcontextl.append(self.tokenizer.sep_token_id)
-                masked_ids.extend([-1,-1,-1])
-                position_ids.extend([0,1,2])
-                token_type_ids.extend([0,1,0])
-                curposition = 3
-                for citationcontext in citationcontexts:
-                    if citationcontext == "targetCITE":
-                        citationcontextl.extend([ent_vocab["MASK"]])
-                        token_type_ids.extend([1])
-                        #masked_ids.extend([1])
-                        masked_ids.extend([ent_vocab[tocite]])
-                        position_ids.extend([curposition])
-                        curposition += 1
-                    elif re.search(rACL,context):
-                        citationcontextl.extend([ent_vocab[context[7:]]])
-                        token_type_ids.extend([1])
-                        #masked_ids.extend([0])
-                        masked_ids.extend([-1])
-                        position_ids.extend([curposition])
-                        curposition += 1
-                    elif citationcontext == "CITE-UNKNOWN":
-                        citationcontextl.extend([0])
-                        token_type_ids.extend([1])
-                        #masked_ids.extend([0])
-                        masked_ids.extend([-1])
-                        position_ids.extend([curposition])
-                        curposition += 1
-                    else:
-                        tokenized_context = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(citationcontext))
-                        citationcontextl.extend(tokenized_context)
-                        token_type_ids.extend([0 for _ in range(len(tokenized_context))])
-                        #masked_ids.extend([0 for _ in range(len(tokenized_context))])
-                        masked_ids.extend([-1 for _ in range(len(tokenized_context))])
-                        position_ids.extend([curposition+i for i in range(len(tokenized_context))])
-                        curposition += len(tokenized_context)
-                if len(citationcontextl) > MAX_LEN:
-                    print("exceed")
-                    citationcontextl = citationcontextl[:MAX_LEN]
-                    masked_ids = masked_ids[:MAX_LEN]
-                    position_ids = position_ids[:MAX_LEN]
-                    token_type_ids = token_type_ids[:MAX_LEN]
-                if i % 100000 == 0:
-                    print(line)
-                    print({
-                    'input_ids': citationcontextl,
-                    'masked_lm_labels' : masked_ids,
-                    'position_ids': position_ids,
-                    'token_type_ids': token_type_ids,
-                    })
-                if len(citationcontextl) != len(masked_ids) or len(masked_ids) != len(position_ids) or len(position_ids) != len(token_type_ids):
-                    print("size diff")
 
-                self.data.append({
-                    'input_ids': citationcontextl,
-                    'masked_lm_labels' : masked_ids,
-                    'position_ids': position_ids,
-                    'token_type_ids': token_type_ids,
-                })
-            fids = open(os.path.join(self.dirname,self.filename[:-4]+".json"),"w")
-            json.dump(self.data,fids)
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, item):
-        return self.data[item]
-
-    def collate_fn(self, batch):
-        input_keys = ['input_ids','masked_lm_labels',"position_ids","token_type_ids","n_word_nodes","attention_mask"]
-        target_keys = ["masked_lm_labels","word_seq_len"]
-        max_words = MAX_LEN
-        batch_x = {n: [] for n in input_keys}
-        batch_y = {n: [] for n in target_keys}
-        
-        for sample in batch:
-            word_pad = max_words - len(sample["input_ids"])
-            if word_pad > 0:
-                batch_x["input_ids"].append(sample["input_ids"]+[-1]*word_pad)
-                batch_x["position_ids"].append(sample["position_ids"]+[0]*word_pad)
-                batch_x["token_type_ids"].append(sample["token_type_ids"]+[0]*word_pad)
-                batch_x["n_word_nodes"].append(max_words)
-                batch_x["masked_lm_labels"].append(sample["masked_lm_labels"]+[-1]*word_pad)
-                adj = torch.ones(len(sample['input_ids']), len(sample['input_ids']), dtype=torch.int)
-                adj = torch.cat((adj,torch.ones(word_pad,adj.shape[1],dtype=torch.int)),dim=0)
-                adj = torch.cat((adj,torch.zeros(MAX_LEN,word_pad,dtype=torch.int)),dim=1)
-                #attention_maskは普通に文章内に対して1で文章外に対して0でいい
-                batch_x['attention_mask'].append(adj)
-                batch_y["masked_lm_labels"].append(sample["masked_lm_labels"]+[-1]*word_pad)
-                batch_y["word_seq_len"].append(len(sample["input_ids"]))
+#入力: directory
+def load_PeerRead_graph_data(path,frequency,window_size,MAX_LEN):
+    def extract_by_frequency(path_train, path_test,frequency):
+        dftrain = pd.read_csv(path_train)
+        dftest = pd.read_csv(path_test)
+        source_cut_train = dftrain[['target_id', 'source_id']].drop_duplicates(subset=['target_id', 'source_id'])
+        source_cut_test = dftest[['target_id', 'source_id']].drop_duplicates(subset=['target_id', 'source_id'])
+        ftrain_fre = open(path_train[:-4]+"_frequency"+str(frequency)+".csv","w")
+        ftest_fre = open(path_test[:-4]+"_frequency"+str(frequency)+".csv","w")
+        wtrain = csv.writer(ftrain_fre)
+        wtest = csv.writer(ftest_fre)
+        wtrain.writerow(["target_id","left_citated_text","right_citated_text","source_id"])
+        wtest.writerow(["target_id","left_citated_text","right_citated_text","source_id"])
+        source_train_keys = source_cut_train.source_id.value_counts().keys()
+        source_test_keys = source_cut_test.source_id.value_counts().keys()
+        dic1 = {}
+        train_counts = source_cut_train.source_id.value_counts()
+        test_counts = source_cut_test.source_id.value_counts()
+        for key in source_train_keys:
+            dic1[key] = train_counts[key]
+        for key in source_test_keys:
+            if key in dic1:
+                dic1[key] += test_counts[key]
             else:
-                batch_x["input_ids"].append(sample["input_ids"])
-                batch_x["position_ids"].append(sample["position_ids"])
-                batch_x["token_type_ids"].append(sample["token_type_ids"])
-                batch_x["n_word_nodes"].append(max_words)
-                batch_x["masked_lm_labels"].append(sample["masked_lm_labels"])
-                adj = torch.ones(len(sample['input_ids']), len(sample['input_ids']), dtype=torch.int)
-                #attention_maskは普通に文章内に対して1で文章外に対して0でいい
-                batch_x['attention_mask'].append(adj)
-                batch_y["masked_lm_labels"].append(sample["masked_lm_labels"])
-                batch_y["word_seq_len"].append(len(sample["input_ids"]))
+                dic1[key] = test_counts[key]
+        frequencylist = []
+        for key in dic1:
+            if dic1[key] >= frequency:
+                frequencylist.append(key)
+        dftrain = dftrain.loc[dftrain["source_id"].isin(frequencylist)]
+        dftest = dftest.loc[dftest["source_id"].isin(frequencylist)]
+        for target_id,left_citated_text,right_citated_text,source_id in zip(dftrain["target_id"],dftrain["left_citated_text"],dftrain["right_citated_text"],dftrain["source_id"]):
+            wtrain.writerow([target_id,left_citated_text,right_citated_text,source_id])
+        ftrain_fre.close()
+        for target_id,left_citated_text,right_citated_text,source_id in zip(dftest["target_id"],dftest["left_citated_text"],dftest["right_citated_text"],dftest["source_id"]):
+            wtest.writerow([target_id,left_citated_text,right_citated_text,source_id])
+        ftest_fre.close()
+        entitylist = list(set(list(dftrain["source_id"].values) + list(dftrain["target_id"].values) + list(dftest["source_id"].values) + list(dftest["target_id"].values)))
+        entvocab = {"UNKNOWN":0,"MASK":1}
+        for i,entity in enumerate(entitylist):
+            entvocab[entity] = i+2
+        return path_train[:-4]+"_frequency"+str(frequency)+".csv",path_test[:-4]+"_frequency"+str(frequency)+".csv",entvocab
+    path_train = os.path.join(path,"train.csv")
+    path_test = os.path.join(path,"test.csv")
+    entvocab = build_ent_vocab(path_train)
+    path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,frequency)
+    dataset_train = PeerReadDataSet(path_train,ent_vocab=entvocab,window_size=window_size,MAX_LEN=MAX_LEN)
+    dataset_test = PeerReadDataSet(path_test,ent_vocab=entvocab,window_size=window_size,MAX_LEN=MAX_LEN)
+    dataset_train_frequency5 = PeerReadDataSet(path_train_frequency5,ent_vocab=entvocab,window_size=window_size,MAX_LEN=MAX_LEN)
+    dataset_test_frequency5 = PeerReadDataSet(path_test_frequency5,ent_vocab=entvocab,window_size=window_size,MAX_LEN=MAX_LEN)
+    return dataset_train,dataset_test_frequency5,entvocab
 
-        for k, v in batch_x.items():
-            if k == 'attention_mask':
-                batch_x[k] = torch.stack(v, dim=0)
+#入力: directory
+def load_AASC_graph_data(path,frequency,window_size,MAX_LEN):
+    def extract_by_frequency(path_train, path_test,frequency):
+        dftrain = pd.read_csv(path_train,quotechar="'")
+        dftest = pd.read_csv(path_test,quotechar="'")
+        source_cut_train = dftrain[['target_id', 'source_id']].drop_duplicates(subset=['target_id', 'source_id'])
+        source_cut_test = dftest[['target_id', 'source_id']].drop_duplicates(subset=['target_id', 'source_id'])
+        ftrain_fre = open(path_train[:-4]+"_frequency"+str(frequency)+".csv","w")
+        ftest_fre = open(path_test[:-4]+"_frequency"+str(frequency)+".csv","w")
+        wtrain = csv.writer(ftrain_fre,quotechar="'")
+        wtest = csv.writer(ftest_fre,quotechar="'")
+        wtrain.writerow(["target_id","left_citated_text","right_citated_text","source_id"])
+        wtest.writerow(["target_id","left_citated_text","right_citated_text","source_id"])
+        source_train_keys = source_cut_train.source_id.value_counts().keys()
+        source_test_keys = source_cut_test.source_id.value_counts().keys()
+        dic1 = {}
+        train_counts = source_cut_train.source_id.value_counts()
+        test_counts = source_cut_test.source_id.value_counts()
+        for key in source_train_keys:
+            dic1[key] = train_counts[key]
+        for key in source_test_keys:
+            if key in dic1:
+                dic1[key] += test_counts[key]
             else:
-                batch_x[k] = torch.tensor(v)
-        for k, v in batch_y.items():
-            batch_y[k] = torch.tensor(v)
-        return (batch_x, batch_y)
+                dic1[key] = test_counts[key]
+        frequencylist = []
+        for key in dic1:
+            if dic1[key] >= frequency:
+                frequencylist.append(key)
+        dftrain = dftrain.loc[dftrain["source_id"].isin(frequencylist)]
+        dftest = dftest.loc[dftest["source_id"].isin(frequencylist)]
+        for target_id,left_citated_text,right_citated_text,source_id in zip(dftrain["target_id"],dftrain["left_citated_text"],dftrain["right_citated_text"],dftrain["source_id"]):
+            wtrain.writerow([target_id,left_citated_text,right_citated_text,source_id])
+        ftrain_fre.close()
+        for target_id,left_citated_text,right_citated_text,source_id in zip(dftest["target_id"],dftest["left_citated_text"],dftest["right_citated_text"],dftest["source_id"]):
+            wtest.writerow([target_id,left_citated_text,right_citated_text,source_id])
+        ftest_fre.close()
+        entitylist = list(set(list(dftrain["source_id"].values) + list(dftrain["target_id"].values) + list(dftest["source_id"].values) + list(dftest["target_id"].values)))
+        entvocab = {"UNKNOWN":0,"MASK":1}
+        for i,entity in enumerate(entitylist):
+            entvocab[entity] = i+2
+        return path_train[:-4]+"_frequency"+str(frequency)+".csv",path_test[:-4]+"_frequency"+str(frequency)+".csv",entvocab
+    path_train = os.path.join(path,"train.csv")
+    path_test = os.path.join(path,"test.csv")
+    entvocab = build_ent_vocab(path_train)
+    path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,frequency)
+    dataset_train = AASCDataSet(path_train,ent_vocab=entvocab,window_size,MAX_LEN)
+    dataset_test = AASCDataSet(path_test,ent_vocab=entvocab,window_size,MAX_LEN)
+    dataset_train_frequency5 = AASCDataSet(path_train_frequency5,ent_vocab=entvocab,window_size,MAX_LEN)
+    dataset_test_frequency5 = AASCDataSet(path_test_frequency5,ent_vocab=entvocab,window_size,MAX_LEN)
+    print("----loading data done----")
+    return dataset_train,dataset_test,entvocab
 
 
 if __name__ == "__main__":
