@@ -175,6 +175,7 @@ def main():
     l_all = 0
     l_prev = 0
     if args.predict:
+        fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(args.epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+".txt","w")
         with torch.no_grad():
             for (inputs,labels) in test_data_iter:
                 outputs = model(input_ids=inputs["input_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),masked_lm_labels=inputs["masked_lm_labels"].cuda(),attention_mask=inputs["attention_mask"].cuda())
@@ -190,29 +191,48 @@ def main():
                     l_prev = l_all
                     print(l_all)
                     print(mrr_all/l_all)
-    print("MRR")
-    print(mrr_all/l_all)
-    print("Recallat5")
-    print(Recallat5_all/l_all)
-    print("Recallat10")
-    print(Recallat10_all/l_all)
-    print("Recallat30")
-    print(Recallat30_all/l_all)
-    print("Recallat50")
-    print(Recallat50_all/l_all)
-    print("MAP")
-    print(MAP_all/l_all)
+        fw.write("MRR\n")
+        fw.write(str(mrr_all/l_all)+"\n")
+        fw.write("Recallat5\n")
+        fw.write(str(Recallat5_all/l_all)+"\n")
+        fw.write("Recallat10\n")
+        fw.write(str(Recallat10_all/l_all)+"\n")
+        fw.write("Recallat30\n")
+        fw.write(str(Recallat30_all/l_all)+"\n")
+        fw.write("Recallat50\n")
+        fw.write(str(Recallat50_all/l_all)+"\n")
+        fw.write("MAP\n")
+        fw.write(str(MAP_all/l_all)+"\n")
+        print("MRR")
+        print(mrr_all/l_all)
+        print("Recallat5")
+        print(Recallat5_all/l_all)
+        print("Recallat10")
+        print(Recallat10_all/l_all)
+        print("Recallat30")
+        print(Recallat30_all/l_all)
+        print("Recallat50")
+        print(Recallat50_all/l_all)
+        print("MAP")
+        print(MAP_all/l_all)
 
     if args.node_classification:
+        fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(args.epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_nodeclassification.txt","w")
         X_train,y_train,X_test,y_test = load_data_SVM(model,ent_vocab)
         print("SVM data load done")
         print("training start")
         Cs = [2 , 2**5, 2 **10]
         gammas = [2 ** -9, 2 ** -6, 2** -3,2 ** 3, 2 ** 6, 2 ** 9]
         svs = [svm.SVC(C=C, gamma=gamma).fit(X_train, y_train) for C, gamma in product(Cs, gammas)]
+        products = [(C,gamma) for C,gamma in product(Cs,gammas)]
         print("training done")
-        for sv in svs:
+        for sv,product1 in zip(svs,products):
             test_label = sv.predict(X_test)
+            fw.write("C:"+str(product1[0])+","+"gamma:"+str(product1[1])+"\n")
+            fw.write("正解率="+str(accuracy_score(y_test, test_label))+"\n")
+            fw.write("マクロ平均="+str(f1_score(y_test, test_label,average="macro"))+"\n")
+            fw.write("ミクロ平均="+str(f1_score(y_test, test_label,average="micro"))+"\n")
+            fw.write(str(collections.Counter(test_label))+"\n")
             print("正解率＝", accuracy_score(y_test, test_label))
             print("マクロ平均＝", f1_score(y_test, test_label,average="macro"))
             print("ミクロ平均＝", f1_score(y_test, test_label,average="micro"))
