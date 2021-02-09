@@ -7,17 +7,10 @@ import re
 import pandas as pd
 import csv
 from utils import build_label_vocab, build_temp_ent_vocab,build_ent_vocab
+import numpy as np
 
 WORD_PADDING_INDEX = 1
 ENTITY_PADDING_INDEX = 1
-#before
-MAX_LEN = 512
-WINDOW_SIZE = 250
-#after
-"""
-MAX_LEN = 256
-WINDOW_SIZE = 100
-"""
 
 class PeerReadDataSet(Dataset):
     def __init__(self, path, ent_vocab, window_size, MAX_LEN):
@@ -321,6 +314,60 @@ def load_AASC_graph_data(path,frequency,window_size,MAX_LEN):
     print("----loading data done----")
     return dataset_train,dataset_test,entvocab
 
+#AASCのnode classificationデータを読み込む^
+def load_data_SVM(model,entvocab):
+    taskn = -1
+    taskdict = {}
+    ftrain = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_train.txt")
+    len1 = 0
+    for line in ftrain:
+        len1 += 1
+    ftrain = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_train.txt")
+    taskn = -1
+    X_train = []
+    y_train = []
+    with torch.no_grad():
+        for i,line in enumerate(ftrain):
+            l = line[:-1].split("\t")
+            paper = l[0]
+            task = l[1]
+            if task not in taskdict:
+                taskn += 1
+                taskdict[task] = taskn
+            masked_lm_labels1 = torch.tensor([[-1] *512])
+            position_ids1 = torch.tensor([[i for i in range(512)]])
+            token_type_ids1 = torch.tensor([[1] + [0]*511])
+            input_ids1 = torch.tensor([[entvocab[paper]] + [-1]*511])
+            adj = torch.ones(1, 1, dtype=torch.int)
+            adj = torch.cat((adj,torch.ones(511,adj.shape[1],dtype=torch.int)),dim=0)
+            adj = torch.cat((adj,torch.zeros(512,511,dtype=torch.int)),dim=1)
+            if i % 1000 == 0:
+                print("all")
+                print(len1)
+                print(i)
+            output = model(input_ids=input_ids1.cuda(),position_ids=position_ids1.cuda(),token_type_ids=token_type_ids1.cuda(),masked_lm_labels=masked_lm_labels1.cuda(),attention_mask=torch.stack([adj],dim=0).cuda())
+            entity_logits = output["sequence_output"][0][0]
+            X_train.append(np.array(entity_logits.cpu()))
+            y_train.append(taskdict[task])
+        ftest = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_test.txt")
+        X_test = []
+        y_test = []
+        for line in ftest:
+            l = line[:-1].split("\t")
+            paper = l[0]
+            task = l[1]
+            masked_lm_labels1 = torch.tensor([[-1] *512])
+            position_ids1 = torch.tensor([[i for i in range(512)]])
+            token_type_ids1 = torch.tensor([[1] + [0]*511])
+            input_ids1 = torch.tensor([[entvocab[paper]] + [-1]*511])
+            adj = torch.ones(1, 1, dtype=torch.int)
+            adj = torch.cat((adj,torch.ones(511,adj.shape[1],dtype=torch.int)),dim=0)
+            adj = torch.cat((adj,torch.zeros(512,511,dtype=torch.int)),dim=1)
+            output = model(input_ids=input_ids1.cuda(),position_ids=position_ids1.cuda(),token_type_ids=token_type_ids1.cuda(),masked_lm_labels=masked_lm_labels1.cuda(),attention_mask=torch.stack([adj],dim=0).cuda())
+            entity_logits = output["sequence_output"][0][0]
+            X_test.append(np.array(entity_logits.cpu()))
+            y_test.append(taskdict[task])
+    return X_train,y_train,X_test,y_test
 
 if __name__ == "__main__":
     path = "/home/ohagi_masaya/M1/TransBasedCitEmb/dataset/citationcontexts.txt"

@@ -14,24 +14,23 @@ from fastNLP import FitlogCallback, WarmupCallback, GradientClipCallback
 from fastNLP import RandomSampler, TorchLoaderIter, LossInForward, Trainer, Tester
 
 sys.path.append('../')
-from dataloader import SCIGraphDataSet,PeerReadDataSet,AASCDataSet
-from model import PTBCN,confirm
-from metrics import MacroMetric
-from metrics import MRR
-from utils import build_label_vocab, build_temp_ent_vocab,build_ent_vocab
+from dataloader import PeerReadDataSet,AASCDataSet
+from model import PTBCN
+from metrics import Evaluation
+from utils import build_ent_vocab
+from dataloader import load_AASC_graph_data,load_PeerRead_graph_data,load_data_SVM
 from collections import Counter
+from itertools import product
+import collections
+from tqdm import tqdm
+import random
+
+from sklearn import svm
+from sklearn.metrics import accuracy_score,f1_score
 
 import pandas as pd
 import csv
 
-
-def exploit_true_labels(masked_lm_labels_batch):
-    true_labels = []
-    for masked_lm_labels in masked_lm_labels_batch:
-        for i,masked_lm_label in enumerate(masked_lm_labels):
-            if masked_lm_label != -1:
-                true_labels.append((i,masked_lm_label))
-    return true_labels
 
 
 def parse_args():
@@ -56,22 +55,13 @@ def parse_args():
     parser.add_argument('--ent_dim', type=int, default=200, help="dimension of entity embeddings")
     parser.add_argument('--ip_config', type=str, default='emb_ip.cfg')
     parser.add_argument('--name', type=str, default='test', help="experiment name")
-    parser.add_argument('--window_size', type=int, default=250, help="experiment name")
-    parser.add_argument('--MAX_LEN', type=int, default=250, help="experiment name")
+    parser.add_argument('--window_size', type=int, default=250, help="the length of context length")
+    parser.add_argument('--MAX_LEN', type=int, default=512, help="MAX length of the input")
+    parser.add_argument('--train', type=bool, default=True, help="train or not")
+    parser.add_argument('--predict', type=bool, default=True, help="predict or not")
+    parser.add_argument('--node_classification', type=bool, default=True, help="conduct node classification or not")
     return parser.parse_args()
 
-
-def train(model,train_data_iter):
-    model.train()
-    total_loss = 0
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    for (inputs,labels) in tqdm(train_data_iter):
-        optimizer.zero_grad()
-        outputs = model(input_ids=inputs["input_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),masked_lm_labels=inputs["masked_lm_labels"].cuda(),attention_mask=inputs["attention_mask"].cuda())
-        loss = criterion(outputs["entity_logits"].view(-1,outputs["entity_logits"].size(-1)), inputs["masked_lm_labels"].cuda())
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
-        optimizer.step()
 
 def main():
     args = parse_args()
@@ -156,44 +146,81 @@ def main():
     model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(data_dir_modelname)+".bin"
     pretrained_model_path = os.path.join(args.model_path,model_name)
     print("train start")
-    for i in range(args.epoch):
-        model_name = "model_"+"epoch"+str(args.epoch-i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(data_dir_modelname)+".bin"
-        pretrained_model_path = os.path.join(args.model_path,model_name)
-        if os.path.exists(pretrained_model_path):
-            model.load_state_dict(torch.load(pretrained_model_path))
-            for j in range(1,i+1):
+    if args.train:
+        for i in range(args.epoch):
+            model_name = "model_"+"epoch"+str(args.epoch-i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(data_dir_modelname)+".bin"
+            pretrained_model_path = os.path.join(args.model_path,model_name)
+            if os.path.exists(pretrained_model_path):
+                model.load_state_dict(torch.load(pretrained_model_path))
+                for j in range(1,i+1):
+                    trainer.train(load_best_model=False)
+                    if args.epoch-i+j % 5 == 0:
+                        model_name = "model_"+"epoch"+str(args.epoch-i+j)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(data_dir_modelname)+".bin"
+                        torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
+                break
+        else:
+            for i in range(1,args.epoch+1):
                 trainer.train(load_best_model=False)
-                if args.epoch-i+j % 5 == 0:
-                    model_name = "model_"+"epoch"+str(args.epoch-i+j)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(data_dir_modelname)+".bin"
+                if i % 5 == 0:
+                    model_name = "model_"+"epoch"+str(i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(data_dir_modelname)+".bin"
                     torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
-            break
-    else:
-        for i in range(1,args.epoch+1):
-            trainer.train(load_best_model=False)
-            if i % 5 == 0:
-                model_name = "model_"+"epoch"+str(i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(data_dir_modelname)+".bin"
-                torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
     print("train end")
+    trainer._load_model(model,"DataParallel_2021-01-29-17-29-35-606006")
 
     #test
     testloader = torch.utils.data.DataLoader(test_set,batch_size=args.batch_size,shuffle=False,num_workers=1)
     test_data_iter = TorchLoaderIter(dataset=test_set, batch_size=args.batch_size, sampler=None,num_workers=1,collate_fn=test_set.collate_fn)
     mrr_all = 0
+    Recallat5_all = 0
+    Recallat10_all = 0
+    Recallat30_all = 0
+    Recallat50_all = 0
+    MAP_all = 0
     l_all = 0
     l_prev = 0
-    with torch.no_grad():
-        for (inputs,labels) in test_data_iter:
-            outputs = model(input_ids=inputs["input_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),masked_lm_labels=inputs["masked_lm_labels"].cuda(),attention_mask=inputs["attention_mask"].cuda())
-            mrr,l = confirm(outputs["entity_logits"],inputs["masked_lm_labels"])
-            mrr_all += mrr
-            l_all += l
-            if l_all - l_prev > 100:
-                l_prev = l_all
-                print(l_all)
-    print(mrr_all)
-    print(l_all)
+    if args.predict:
+        with torch.no_grad():
+            for (inputs,labels) in test_data_iter:
+                outputs = model(input_ids=inputs["input_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),masked_lm_labels=inputs["masked_lm_labels"].cuda(),attention_mask=inputs["attention_mask"].cuda())
+                 MAP,mrr,Recallat5,Recallat10,Recallat30,Recallat50,l = Evaluation(outputs["entity_logits"],inputs["masked_lm_labels"])
+                mrr_all += mrr
+                Recallat5_all += Recallat5
+                Recallat10_all += Recallat10
+                Recallat30_all += Recallat30
+                Recallat50_all += Recallat50
+                MAP_all += MAP
+                l_all += l
+                if l_all - l_prev > 100:
+                    l_prev = l_all
+                    print(l_all)
+                    print(mrr_all/l_all)
+    print("MRR")
     print(mrr_all/l_all)
+    print("Recallat5")
+    print(Recallat5_all/l_all)
+    print("Recallat10")
+    print(Recallat10_all/l_all)
+    print("Recallat30")
+    print(Recallat30_all/l_all)
+    print("Recallat50")
+    print(Recallat50_all/l_all)
+    print("MAP")
+    print(MAP_all/l_all)
 
+    if args.node_classification:
+        X_train,y_train,X_test,y_test = load_data_SVM(model,ent_vocab)
+        print("SVM data load done")
+        print("training start")
+        Cs = [2 , 2**5, 2 **10]
+        gammas = [2 ** -9, 2 ** -6, 2** -3,2 ** 3, 2 ** 6, 2 ** 9]
+        svs = [svm.SVC(C=C, gamma=gamma).fit(X_train, y_train) for C, gamma in product(Cs, gammas)]
+        print("training done")
+        for sv in svs:
+            test_label = sv.predict(X_test)
+            print("正解率＝", accuracy_score(y_test, test_label))
+            print("マクロ平均＝", f1_score(y_test, test_label,average="macro"))
+            print("ミクロ平均＝", f1_score(y_test, test_label,average="micro"))
+            print(collections.Counter(test_label))
 
 if __name__ == '__main__':
     main()
