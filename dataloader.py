@@ -251,6 +251,7 @@ class AASCDataSet_randomMASK(Dataset):
                 masked_ids = []
                 position_ids = []
                 token_type_ids = []
+                citepositionids = []
                 citationcontextl.append(self.tokenizer.cls_token_id)
                 citationcontextl.append(ent_vocab[target_id])
                 citationcontextl.append(self.tokenizer.sep_token_id)
@@ -375,6 +376,7 @@ class AASCDataSet_eachMASK(Dataset):
                 masked_ids = []
                 position_ids = []
                 token_type_ids = []
+                citepositionids = []
                 citationcontextl.append(self.tokenizer.cls_token_id)
                 citationcontextl.append(ent_vocab[target_id])
                 citationcontextl.append(self.tokenizer.sep_token_id)
