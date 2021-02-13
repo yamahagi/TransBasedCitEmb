@@ -304,7 +304,7 @@ class AASCDataSet_randomMASK(Dataset):
                 cited_position = cite_position_ids[1][0]
                 cited_id = cite_position_ids[1][1]
                 input_ids[citing_position] = self.ent_vocab["MASK"]
-                input_ids[cited_position] = self.ent_vocab[cited_id]
+                input_ids[cited_position] = cited_id
                 masked_lm_labels[citing_position] = citing_id
                 masked_lm_labels[cited_position] = -1
             if word_pad > 0:
@@ -404,8 +404,8 @@ class AASCDataSet_eachMASK(Dataset):
                 cited_position = citepositionids[1][0]
                 cited_id = citepositionids[1][1]
                 citationcontextl[citing_position] = ent_vocab["MASK"]
-                citationcontextl[cited_position] = ent_vocab[cited_id]
-                masked_ids[citing_position] = ent_vocab[citing_id]
+                citationcontextl[cited_position] = cited_id
+                masked_ids[citing_position] = citing_id
                 masked_ids[cited_position] = -1
                 self.data.append({
                     'input_ids': citationcontextl[:MAX_LEN],
