@@ -16,6 +16,7 @@ from fastNLP import RandomSampler, TorchLoaderIter, LossInForward, Trainer, Test
 sys.path.append('../')
 from dataloader import PeerReadDataSet,AASCDataSet
 from model import PTBCN
+from metrics import MacroMetric
 from metrics import Evaluation
 from utils import build_ent_vocab
 from dataloader import load_AASC_graph_data,load_PeerRead_graph_data,load_data_SVM
