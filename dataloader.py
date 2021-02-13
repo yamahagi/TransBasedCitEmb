@@ -302,8 +302,8 @@ class AASCDataSet_randomMASK(Dataset):
                 citing_id = cite_position_ids[0][1]
                 cited_position = cite_position_ids[1][0]
                 cited_id = cite_position_ids[1][1]
-                input_ids[citing_position] = ent_vocab["MASK"]
-                input_ids[cited_position] = ent_vocab[cited_id]
+                input_ids[citing_position] = self.ent_vocab["MASK"]
+                input_ids[cited_position] = self.ent_vocab[cited_id]
                 masked_lm_labels[citing_position] = citing_id
                 masked_lm_labels[cited_position] = -1
             if word_pad > 0:
@@ -567,10 +567,17 @@ def load_AASC_graph_data(path,frequency,WINDOW_SIZE,MAX_LEN,pretrained_model):
     path_test = os.path.join(path,"test.csv")
     entvocab = build_ent_vocab(path_train)
     path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,frequency)
+    """
     dataset_train = AASCDataSet(path_train,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
     dataset_test = AASCDataSet(path_test,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
     dataset_train_frequency5 = AASCDataSet(path_train_frequency5,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
     dataset_test_frequency5 = AASCDataSet(path_test_frequency5,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
+    """
+    #randomでMASKするように一旦変更
+    dataset_train = AASCDataSet_randomMASK(path_train,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
+    dataset_test = AASCDataSet_randomMASK(path_test,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
+    dataset_train_frequency5 = AASCDataSet_randomMASK(path_train_frequency5,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
+    dataset_test_frequency5 = AASCDataSet_randomMASK(path_test_frequency5,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
     print("----loading data done----")
     return dataset_train,dataset_test_frequency5,entvocab
 

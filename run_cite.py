@@ -14,7 +14,6 @@ from fastNLP import FitlogCallback, WarmupCallback, GradientClipCallback
 from fastNLP import RandomSampler, TorchLoaderIter, LossInForward, Trainer, Tester
 
 sys.path.append('../')
-from dataloader import PeerReadDataSet,AASCDataSet
 from model import PTBCN
 from metrics import MacroMetric
 from metrics import Evaluation
