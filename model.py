@@ -65,6 +65,70 @@ class PTBCN(BertForMaskedLM):
                 'entity_logits': ent_logits,
                 'sequence_output': sequence_output}
 
+class PTBCNCOKE(BertForMaskedLM):
+    config_class = BertConfig
+    base_model_prefix = "bert"
+    def __init__(self, config, num_ent, MAX_LEN):
+        super().__init__(config)
+        self.ent_lm_head = EntLMHead(config,num_ent)
+        self.ent_embeddings = nn.Embedding(num_ent, 768, padding_idx=0)
+        self.MAX_LEN = MAX_LEN
+        #self.apply(self._init_weights)
+
+    def change_type_embeddings(self):
+        self.config.type_vocab_size = 2
+        single_emb = self.bert.embeddings.token_type_embeddings
+        self.bert.embeddings.token_type_embeddings = nn.Embedding(2, self.config.hidden_size)
+        self.bert.embeddings.token_type_embeddings.weight = torch.nn.Parameter(single_emb.weight.repeat([2, 1]))
+
+    def forward(
+            self,
+            target_ids=None,
+            source_ids=None,
+            position_ids=None,
+            contexts=None,
+            token_type_ids=None,
+            attention_masks=None,
+            mask_positions=None
+    ):
+        input_embeds = []
+        masked_lm_labels = []
+        for target_id,context,source_id,mask_position in zip(target_ids,contexts,source_ids,mask_positions):
+            emb = []
+            masked_lm_label = []
+            if mask_position == 0:
+                emb.append(self.bert.embeddings.word_embeddings(torch.tensor(1)))
+                emb.append(context.cuda())
+                emb.append(self.bert.embeddings.word_embeddings(source_id))
+                masked_lm_label.append(torch.tensor([target_id,-1,-1]))
+            else:
+                emb.append(self.bert.embeddings.word_embeddings(target_id))
+                emb.append(context.cuda())
+                emb.append(self.bert.embeddings.word_embeddings(torch.tensor(1)))
+                masked_lm_label.append(torch.tensor([-1,-1,source_id]))
+            input_embed = torch.cat([embedding.unsqueeze(0) for embedding in emb],dim = 0)
+            masked_lm_label = torch.cat([label.unsqueeze(0) for label in masked_lm_label],dim=0)
+            input_embeds.append(input_embed)
+            masked_lm_labels.append(masked_lm_label)
+        input_embeds = torch.cat([embedding.unsqueeze(0) for embedding in input_embeds],dim = 0).cuda()
+        masked_lm_labels = torch.cat([masked_lm_label.unsqueeze(0) for masked_lm_label in masked_lm_labels],dim = 0).cuda()
+        outputs = self.bert(
+            input_ids=None,
+            attention_mask=attention_masks,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            inputs_embeds=input_embeds,
+        )
+        sequence_output = outputs[0]  # batch x seq_len x hidden_size
+        loss_fct = CrossEntropyLoss(ignore_index=-1)
+        ent_logits = self.ent_lm_head(sequence_output)
+        ent_predict = torch.argmax(ent_logits, dim=-1)
+        ent_masked_lm_loss = loss_fct(ent_logits.view(-1, ent_logits.size(-1)), masked_lm_labels.view(-1))
+        loss = ent_masked_lm_loss
+        return {'loss': loss,
+                'entity_pred': ent_predict,
+                'entity_logits': ent_logits,
+                'sequence_output': sequence_output}
 
 class BertLayerNorm(nn.Module):
     """LayerNormalization層 """
@@ -80,18 +144,6 @@ class BertLayerNorm(nn.Module):
         s = (x - u).pow(2).mean(dim=(1, 2), keepdim=True)
         x = (x - u) / torch.sqrt(s + self.variance_epsilon)
         return self.gamma * x + self.beta
-
-def CrossEntropy(ent_logits_batch,masked_lm_labels_batch):
-    l = len(ent_logits[0])
-    for ent_logits,masked_lm_labels in zip(ent_logits_batch,masked_lm_labels):
-        if masked_lm_label == -1:
-            continue
-        else:
-            for i,ent in enumerate(ent_logit):
-                if i == masked_lm_label:
-                    loss += 1
-                else:
-                    loss += 1
 
 
 def gelu(x):

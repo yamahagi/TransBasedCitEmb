@@ -53,9 +53,12 @@ def build_temp_cite_vocab(path):
             cur += 1
     return ent_vocab
 
-def build_ent_vocab(path):
+def build_ent_vocab(path,dataset="AASC"):
     ent_vocab = {"UNKNOWN":0,"MASK":1}
-    df = pd.read_csv(path,quotechar="'")
+    if dataset == "AASC":
+        df = pd.read_csv(path,quotechar="'")
+    else:
+        df = pd.read_csv(path)
     entitylist = list(set(list(df["source_id"].values)+list(df["target_id"].values)))
     for i,entity in enumerate(entitylist):
         ent_vocab[entity] = i+2

@@ -41,7 +41,7 @@ def parse_args():
                         help="fitlog directory path")
     parser.add_argument('--batch_size', type=int, default=32, help="batch size")
     parser.add_argument('--frequency', type=int, default=5, help="frequency to remove rare entity")
-    parser.add_argument('--lr', type=float, default=5e-5, help="learning rate")
+    parser.add_argument('--lr', type=float, default=2e-5, help="learning rate")
     parser.add_argument('--beta', type=float, default=0.999, help="beta_2 of adam")
     parser.add_argument('--weight_decay', type=float, default=0.01, help="weight decay")
     parser.add_argument('--warm_up', type=float, default=0.1, help="warmup proportion or steps")
@@ -173,10 +173,10 @@ def main():
     l_all = 0
     l_prev = 0
     if args.predict:
-        model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+".bin"
+        model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
         pretrained_model_path = os.path.join(args.model_path,model_name)
         model.load_state_dict(torch.load(pretrained_model_path))
-        fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(args.epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+".txt","w")
+        fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(args.epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_eachMASK.txt","w")
         with torch.no_grad():
             for (inputs,labels) in test_data_iter:
                 outputs = model(input_ids=inputs["input_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),masked_lm_labels=inputs["masked_lm_labels"].cuda(),attention_mask=inputs["attention_mask"].cuda())
@@ -218,7 +218,7 @@ def main():
         print(MAP_all/l_all)
 
     if args.node_classification:
-        fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(args.epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_nodeclassification.txt","w")
+        fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(args.epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_nodeclassification_eachMASK.txt","w")
         X_train,y_train,X_test,y_test = load_data_SVM(model,ent_vocab)
         print("SVM data load done")
         print("training start")
