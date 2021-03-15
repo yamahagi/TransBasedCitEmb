@@ -8,7 +8,7 @@ from torch import optim
 import torch.nn as nn
 from transformers import RobertaConfig, RobertaTokenizer
 from transformers import BertConfig, BertTokenizer, BertModel
-from dataloader_CoKE import load_AASC_graph_data,load_PeerRead_graph_data
+from dataloader_CoKE import load_AASC_graph_data,load_PeerRead_graph_data,load_data_SVM,load_data_intent_identification
 
 import fitlog
 from fastNLP import FitlogCallback, WarmupCallback, GradientClipCallback
