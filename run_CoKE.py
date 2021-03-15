@@ -50,6 +50,7 @@ def parse_args():
     parser.add_argument('--train', type=bool, default=True, help="train or not")
     parser.add_argument('--predict', type=bool, default=True, help="predict or not")
     parser.add_argument('--node_classification', type=bool, default=True, help="conduct node classification or not")
+    parser.add_argument('--intent_identification', type=bool, default=True, help="conduct intent identification or not")
     parser.add_argument('--pretrained_model', type=str, default="scibert", help="scibert or bert")
     return parser.parse_args()
 
@@ -125,22 +126,31 @@ def main():
     if args.train:
         for i in range(args.epoch):
             model_name = "model_"+"epoch"+str(args.epoch-i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
+            optimizer_name = "optimizer_"+"epoch"+str(args.epoch-i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
             pretrained_model_path = os.path.join(args.model_path,model_name)
+            pretrained_optimizer_path = os.path.join(args.model_path,optimizer_name)
             if os.path.exists(pretrained_model_path):
+                print("found")
+                print(pretrained_model_path)
                 model.load_state_dict(torch.load(pretrained_model_path))
+                optimizer.load_state_dict(torch.load(pretrained_optimizer_path))
                 for j in range(1,i+1):
                     trainer.train(load_best_model=False)
-                    model_name = "model_"+"epoch"+str(args.epoch-i+j)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
-                    torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
+                    if args.epoch-i+j % 5 == 0:
+                        model_name = "model_"+"epoch"+str(args.epoch-i+j)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
+                        optimizer_name = "optimizer_"+"epoch"+str(args.epoch-i+j)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
+                        torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
+                        torch.save(optimizer.state_dict(), os.path.join(args.model_path,optimizer_name))
                 break
         else:
             for i in range(1,args.epoch+1):
                 trainer.train(load_best_model=False)
-                model_name = "model_"+"epoch"+str(i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
-                torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
+                if i%5 == 0:
+                    model_name = "model_"+"epoch"+str(i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
+                    optimizer_name = "optimizer_"+"epoch"+str(i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
+                    torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
+                    torch.save(optimizer.state_dict(), os.path.join(args.model_path,optimizer_name))
     print("train end")
-    #trainer._load_model(model,"DataParallel_2021-01-29-17-29-35-606006")
-    """
     #test
     testloader = torch.utils.data.DataLoader(test_set,batch_size=args.batch_size,shuffle=False,num_workers=1)
     test_data_iter = TorchLoaderIter(dataset=test_set, batch_size=args.batch_size, sampler=None,num_workers=1,collate_fn=test_set.collate_fn)
@@ -152,10 +162,11 @@ def main():
     MAP_all = 0
     l_all = 0
     l_prev = 0
-    if args.predict:
+    if args.predict and 1 == 0:
         model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
         pretrained_model_path = os.path.join(args.model_path,model_name)
         model.load_state_dict(torch.load(pretrained_model_path))
+        model.eval()
         fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(args.epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_eachMASK.txt","w")
         with torch.no_grad():
             for (inputs,labels) in test_data_iter:
@@ -197,7 +208,7 @@ def main():
         print("MAP")
         print(MAP_all/l_all)
 
-    if args.node_classification:
+    if args.node_classification and args.dataset == "AASC":
         fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(args.epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_nodeclassification_eachMASK.txt","w")
         X_train,y_train,X_test,y_test = load_data_SVM(model,ent_vocab)
         print("SVM data load done")
@@ -218,7 +229,47 @@ def main():
             print("マクロ平均＝", f1_score(y_test, test_label,average="macro"))
             print("ミクロ平均＝", f1_score(y_test, test_label,average="micro"))
             print(collections.Counter(test_label))
-    """
+    
+    if args.intent_identification and args.dataset == "AASC":
+        fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(args.epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_intentidentification.txt","w")
+        X,y = load_data_intent_identification(model,ent_vocab)
+        print("intent identification data load done")
+        l = [i for i in range(len(X))]
+        random.shuffle(l)
+        for epoch in range(5):
+            if i == 0:
+                X_train = [X[i] for i in l[:len(l)//5]]
+                y_train = [y[i] for i in l[:len(l)//5]]
+                X_test = [X[i] for i in l[len(l)//5:]]
+                y_test = [y[i] for i in l[len(l)//5:]]
+            elif i == 4:
+                X_train = [X[i] for i in l[len(l)*epoch//5:]]
+                y_train = [y[i] for i in l[len(l)*epoch//5:]]
+                X_test = [X[i] for i in l[:len(l)*epoch//5]]
+                y_test = [y[i] for i in l[:len(l)*epoch//5]]
+            else:
+                X_train = [X[i] for i in l[len(l)*epoch//5:len(l)*(epoch+1)//5]]
+                y_train = [y[i] for i in l[len(l)*epoch//5:len(l)*(epoch+1)//5]]
+                X_test = [X[i] for i in l[:len(l)*epoch//5]+l[len(l)*(epoch+1)//5:]]
+                y_test = [y[i] for i in l[:len(l)*epoch//5]+l[len(l)*(epoch+1)//5:]]
+            print("training start")
+            Cs = [2 , 2**5, 2 **10]
+            gammas = [2 ** -9, 2 ** -6, 2** -3,2 ** 3, 2 ** 6, 2 ** 9]
+            svs = [svm.SVC(C=C, gamma=gamma).fit(X_train, y_train) for C, gamma in product(Cs, gammas)]
+            products = [(C,gamma) for C,gamma in product(Cs,gammas)]
+            print("training done")
+            for sv,product1 in zip(svs,products):
+                test_label = sv.predict(X_test)
+                fw.write("C:"+str(product1[0])+","+"gamma:"+str(product1[1])+"\n")
+                fw.write("正解率="+str(accuracy_score(y_test, test_label))+"\n")
+                fw.write("マクロ平均="+str(f1_score(y_test, test_label,average="macro"))+"\n")
+                fw.write("ミクロ平均="+str(f1_score(y_test, test_label,average="micro"))+"\n")
+                fw.write(str(collections.Counter(test_label))+"\n")
+                print("正解率＝", accuracy_score(y_test, test_label))
+                print("マクロ平均＝", f1_score(y_test, test_label,average="macro"))
+                print("ミクロ平均＝", f1_score(y_test, test_label,average="micro"))
+                print(collections.Counter(test_label))
+
 
 if __name__ == '__main__':
     main()

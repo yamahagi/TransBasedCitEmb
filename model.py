@@ -97,14 +97,14 @@ class PTBCNCOKE(BertForMaskedLM):
             emb = []
             masked_lm_label = []
             if mask_position == 0:
-                emb.append(self.bert.embeddings.word_embeddings(torch.tensor(1)))
+                emb.append(self.ent_embeddings(torch.tensor(1).cuda()))
                 emb.append(context.cuda())
-                emb.append(self.bert.embeddings.word_embeddings(source_id))
+                emb.append(self.ent_embeddings(torch.tensor(source_id).cuda()))
                 masked_lm_label.append(torch.tensor([target_id,-1,-1]))
             else:
-                emb.append(self.bert.embeddings.word_embeddings(target_id))
+                emb.append(self.ent_embeddings(torch.tensor(target_id).cuda()))
                 emb.append(context.cuda())
-                emb.append(self.bert.embeddings.word_embeddings(torch.tensor(1)))
+                emb.append(self.ent_embeddings(torch.tensor(1).cuda()))
                 masked_lm_label.append(torch.tensor([-1,-1,source_id]))
             input_embed = torch.cat([embedding.unsqueeze(0) for embedding in emb],dim = 0)
             masked_lm_label = torch.cat([label.unsqueeze(0) for label in masked_lm_label],dim=0)

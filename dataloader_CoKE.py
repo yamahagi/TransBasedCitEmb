@@ -82,16 +82,19 @@ class PeerReadDataSet(Dataset):
             batch_x["token_type_ids"].append([1,0,1])
             batch_x["target_ids"].append(sample["target_id"])
             batch_x["source_ids"].append(sample["source_id"])
-            batch_x["contexts"].append(torch.tensor(self.matrix[sample["target_id"]][sample["source_id"]]))
+            batch_x["contexts"].append(self.matrix[sample["target_id"]][sample["source_id"]])
             batch_x["mask_positions"].append(sample["MASK_position"])
             adj = torch.ones(3,3,dtype=torch.int)
             batch_x["attention_masks"].append(adj)
             batch_y["target_ids"].append(sample["target_id"])
             batch_y["source_ids"].append(sample["source_id"])
-
         for k, v in batch_x.items():
             if k == 'attention_masks':
                 batch_x[k] = torch.stack(v, dim=0)
+            else:
+                batch_x[k] = torch.tensor(v)
+        for k, v in batch_y.items():
+            batch_y[k] = torch.tensor(v)
         return (batch_x, batch_y)
 
 class AASCDataSet(Dataset):
@@ -135,7 +138,7 @@ class AASCDataSet(Dataset):
             batch_x["token_type_ids"].append([1,0,1])
             batch_x["target_ids"].append(sample["target_id"])
             batch_x["source_ids"].append(sample["source_id"])
-            batch_x["contexts"].append(torch.tensor(self.matrix[sample["target_id"]][sample["source_id"]]))
+            batch_x["contexts"].append(self.matrix[sample["target_id"]][sample["source_id"]])
             batch_x["mask_positions"].append(sample["MASK_position"])
             adj = torch.ones(3,3,dtype=torch.int)
             batch_x["attention_masks"].append(adj)
@@ -145,6 +148,10 @@ class AASCDataSet(Dataset):
         for k, v in batch_x.items():
             if k == 'attention_masks':
                 batch_x[k] = torch.stack(v, dim=0)
+            else:
+                batch_x[k] = torch.tensor(v)
+        for k, v in batch_y.items():
+            batch_y[k] = torch.tensor(v)
         return (batch_x, batch_y)
 
 #入力: directory
@@ -313,6 +320,46 @@ def load_data_SVM(model,entvocab):
             X_test.append(np.array(entity_logits.cpu()))
             y_test.append(taskdict[task])
     return X_train,y_train,X_test,y_test
+
+#AASCのintent identificationデータを読み込む
+def load_data_intent_identification(model,entvocab):
+    intentn = -1
+    intentdict = {}
+    f = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/id2intent.txt")
+    X = []
+    y = []
+    with torch.no_grad():
+        for i,line in enumerate(f):
+            l = line[:-1].split("\t")
+            if i == 0:
+                continue
+            target_id = l[0]
+            source_id = l[1]
+            intent = l[2]
+            if intent not in intentdict:
+                intentn += 1
+                intentdict[intent] = intentn
+            masked_lm_labels = torch.tensor([[-1] *3])
+            position_ids = torch.tensor([[i for i in range(3)]])
+            token_type_ids = torch.tensor([[1] + [0]*2])
+            input_ids = torch.tensor([[entvocab[target_id]] + [-1]*2])
+            adj = torch.ones(1, 1, dtype=torch.int)
+            adj = torch.cat((adj,torch.ones(2,adj.shape[1],dtype=torch.int)),dim=0)
+            adj = torch.cat((adj,torch.zeros(3,2,dtype=torch.int)),dim=1)
+            output = model(input_ids=input_ids.cuda(),position_ids=position_ids.cuda(),token_type_ids=token_type_ids.cuda(),masked_lm_labels=masked_lm_labels.cuda(),attention_mask=torch.stack([adj],dim=0).cuda())
+            target_logits = output["sequence_output"][0][0]
+            masked_lm_labels = torch.tensor([[-1] *3])
+            position_ids = torch.tensor([[i for i in range(3)]])
+            token_type_ids = torch.tensor([[1] + [0]*2])
+            input_ids = torch.tensor([[entvocab[source_id]] + [-1]*2])
+            adj = torch.ones(1, 1, dtype=torch.int)
+            adj = torch.cat((adj,torch.ones(2,adj.shape[1],dtype=torch.int)),dim=0)
+            adj = torch.cat((adj,torch.zeros(3,2,dtype=torch.int)),dim=1)
+            output = model(input_ids=input_ids.cuda(),position_ids=position_ids.cuda(),token_type_ids=token_type_ids.cuda(),masked_lm_labels=masked_lm_labels.cuda(),attention_mask=torch.stack([adj],dim=0).cuda())
+            source_logits = output["sequence_output"][0][0]
+            X.append(np.concatenate([np.array(target_logits.cpu()),np.array(source_logits.cpu())]))
+            y.append(taskdict[task])
+    return X,y
 
 if __name__ == "__main__":
     path = "/home/ohagi_masaya/M1/TransBasedCitEmb/dataset/citationcontexts.txt"
