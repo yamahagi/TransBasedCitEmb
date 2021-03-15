@@ -99,10 +99,10 @@ class PTBCNCOKE(BertForMaskedLM):
             if mask_position == 0:
                 emb.append(self.ent_embeddings(torch.tensor(1).cuda()))
                 emb.append(context.cuda())
-                emb.append(self.ent_embeddings(torch.tensor(source_id).cuda()))
+                emb.append(self.ent_embeddings(source_id.cuda()))
                 masked_lm_label.append(torch.tensor([target_id,-1,-1]))
             else:
-                emb.append(self.ent_embeddings(torch.tensor(target_id).cuda()))
+                emb.append(self.ent_embeddings(target_id.cuda()))
                 emb.append(context.cuda())
                 emb.append(self.ent_embeddings(torch.tensor(1).cuda()))
                 masked_lm_label.append(torch.tensor([-1,-1,source_id]))
@@ -128,7 +128,8 @@ class PTBCNCOKE(BertForMaskedLM):
         return {'loss': loss,
                 'entity_pred': ent_predict,
                 'entity_logits': ent_logits,
-                'sequence_output': sequence_output}
+                'sequence_output': sequence_output,
+                'masked_lm_labels': masked_lm_labels}
 
 class BertLayerNorm(nn.Module):
     """LayerNormalization層 """

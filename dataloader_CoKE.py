@@ -127,7 +127,7 @@ class AASCDataSet(Dataset):
         return self.data[item]
 
     def collate_fn(self, batch):
-        input_keys = ['target_ids','source_ids',"position_ids","token_type_ids","attention_masks","mask_positions","contexts"]
+        input_keys = ['target_ids','source_ids',"position_ids","token_type_ids","attention_masks","mask_positions","contexts","masked_lm_labels"]
         target_keys = ["target_ids","source_ids"]
         max_words = self.MAX_LEN
         batch_x = {n: [] for n in input_keys}
@@ -140,6 +140,10 @@ class AASCDataSet(Dataset):
             batch_x["source_ids"].append(sample["source_id"])
             batch_x["contexts"].append(self.matrix[sample["target_id"]][sample["source_id"]])
             batch_x["mask_positions"].append(sample["MASK_position"])
+            if sample["MASK_position"] == 0:
+                batch_x["masked_lm_labels"].append(sample["target_id"])
+            else:
+                batch_x["masked_lm_labels"].append(sample["source_id"])
             adj = torch.ones(3,3,dtype=torch.int)
             batch_x["attention_masks"].append(adj)
             batch_y["target_ids"].append(sample["target_id"])
