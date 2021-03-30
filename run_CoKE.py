@@ -13,6 +13,7 @@ from dataloader_CoKE import load_AASC_graph_data,load_PeerRead_graph_data,load_d
 import fitlog
 from fastNLP import FitlogCallback, WarmupCallback, GradientClipCallback
 from fastNLP import RandomSampler, TorchLoaderIter, LossInForward, Trainer, Tester
+from metrics import Evaluation
 
 sys.path.append('../')
 from model import PTBCNCOKE
@@ -24,6 +25,9 @@ import random
 
 import pandas as pd
 import csv
+
+from sklearn import svm
+from sklearn.metrics import accuracy_score,f1_score
 
 
 
@@ -62,7 +66,7 @@ def main():
         fitlog.debug()
     if args.gpu != 'all':
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-
+    print(args.batch_size)
     if torch.cuda.is_available():
         print("GPU OK")
     else:
@@ -136,7 +140,7 @@ def main():
                 optimizer.load_state_dict(torch.load(pretrained_optimizer_path))
                 for j in range(1,i+1):
                     trainer.train(load_best_model=False)
-                    if args.epoch-i+j % 2 == 0:
+                    if args.epoch-i+j % 25 == 0:
                         model_name = "model_"+"epoch"+str(args.epoch-i+j)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
                         optimizer_name = "optimizer_"+"epoch"+str(args.epoch-i+j)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
                         torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
@@ -145,15 +149,15 @@ def main():
         else:
             for i in range(1,args.epoch+1):
                 trainer.train(load_best_model=False)
-                if i%2 == 0:
+                if i%25 == 0:
                     model_name = "model_"+"epoch"+str(i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
                     optimizer_name = "optimizer_"+"epoch"+str(i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
                     torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
                     torch.save(optimizer.state_dict(), os.path.join(args.model_path,optimizer_name))
     print("train end")
     #test
-    testloader = torch.utils.data.DataLoader(test_set,batch_size=args.batch_size,shuffle=False,num_workers=1)
-    test_data_iter = TorchLoaderIter(dataset=test_set, batch_size=args.batch_size, sampler=None,num_workers=1,collate_fn=test_set.collate_fn)
+    testloader = torch.utils.data.DataLoader(test_set,batch_size=args.batch_size,shuffle=False,num_workers=os.cpu_count()//2)
+    test_data_iter = TorchLoaderIter(dataset=test_set, batch_size=args.batch_size, sampler=None,num_workers=os.cpu_count()//2,collate_fn=test_set.collate_fn)
     mrr_all = 0
     Recallat5_all = 0
     Recallat10_all = 0
@@ -170,8 +174,9 @@ def main():
         fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(args.epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_eachMASK.txt","w")
         with torch.no_grad():
             for (inputs,labels) in test_data_iter:
-                outputs = model(target_ids=inputs["target_ids"].cuda(),source_ids=inputs["source_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),attention_mask=inputs["attention_masks"].cuda(),mask_positions=inputs["mask_positions"].cuda(),contexts=inputs["contexts"].cuda())
-                MAP,mrr,Recallat5,Recallat10,Recallat30,Recallat50,l = Evaluation(outputs["entity_logits"],outputs["masked_lm_labels"])
+                outputs = model(target_ids=inputs["target_ids"].cuda(),source_ids=inputs["source_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),attention_masks=inputs["attention_masks"].cuda(),mask_positions=inputs["mask_positions"].cuda(),contexts=inputs["contexts"].cuda())
+                masked_lm_labels = [[-1,-1,source_id] for source_id in np.array(inputs["source_ids"].cpu())]
+                MAP,mrr,Recallat5,Recallat10,Recallat30,Recallat50,l = Evaluation(outputs["entity_logits"],masked_lm_labels)
                 mrr_all += mrr
                 Recallat5_all += Recallat5
                 Recallat10_all += Recallat10
@@ -207,8 +212,7 @@ def main():
         print(Recallat50_all/l_all)
         print("MAP")
         print(MAP_all/l_all)
-
-    if args.node_classification and args.dataset == "AASC":
+    if args.node_classification and args.dataset == "AASC": 
         fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(args.epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_nodeclassification_eachMASK.txt","w")
         X_train,y_train,X_test,y_test = load_data_SVM(model,ent_vocab)
         print("SVM data load done")

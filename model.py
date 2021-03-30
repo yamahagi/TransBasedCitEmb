@@ -21,7 +21,6 @@ class PTBCN(BertForMaskedLM):
         single_emb = self.bert.embeddings.token_type_embeddings
         self.bert.embeddings.token_type_embeddings = nn.Embedding(2, self.config.hidden_size)
         self.bert.embeddings.token_type_embeddings.weight = torch.nn.Parameter(single_emb.weight.repeat([2, 1]))
-
     def forward(
             self,
             input_ids=None,
@@ -80,6 +79,33 @@ class PTBCNCOKE(BertForMaskedLM):
         single_emb = self.bert.embeddings.token_type_embeddings
         self.bert.embeddings.token_type_embeddings = nn.Embedding(2, self.config.hidden_size)
         self.bert.embeddings.token_type_embeddings.weight = torch.nn.Parameter(single_emb.weight.repeat([2, 1]))
+    def get_embeddings(
+            self,
+            target_ids=None,
+            source_ids=None,
+            position_ids=None,
+            contexts=None,
+            token_type_ids=None,
+            attention_masks=None,
+            mask_positions=None,
+    ):
+        input_embeds = []
+        for target_id in target_ids:
+            emb = [torch.tensor([0]*768).cuda() for _ in range(3)]
+            emb[0] = self.ent_embeddings(target_id.cuda())
+            input_embed = torch.cat([embedding.unsqueeze(0) for embedding in emb],dim = 0)
+            input_embeds.append(input_embed)
+        input_embeds = torch.cat([embedding.unsqueeze(0) for embedding in input_embeds],dim = 0).cuda()
+        outputs = self.bert(
+            input_ids=None,
+            attention_mask=attention_masks,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            inputs_embeds=input_embeds,
+        )
+        sequence_output = outputs[0]  # batch x seq_len x hidden_size
+        return {"sequence_output":sequence_output,
+                "emb":input_embeds}
 
     def forward(
             self,
@@ -89,7 +115,7 @@ class PTBCNCOKE(BertForMaskedLM):
             contexts=None,
             token_type_ids=None,
             attention_masks=None,
-            mask_positions=None
+            mask_positions=None,
     ):
         input_embeds = []
         masked_lm_labels = []

@@ -42,7 +42,7 @@ def makecitationmatrix_AASC(path,path_emb,ent_vocab):
     return dict1
 
 class PeerReadDataSet(Dataset):
-    def __init__(self, path, ent_vocab, MAX_LEN, matrix):
+    def __init__(self, path, ent_vocab, MAX_LEN, matrix,mode="train"):
         self.path = path
         self.dirname = os.path.dirname(path)
         self.filename = os.path.basename(path)
@@ -53,11 +53,12 @@ class PeerReadDataSet(Dataset):
         target_ids = df["target_id"]
         source_ids = df["source_id"]
         for i,(target_id,source_id) in enumerate(zip(target_ids,source_ids)):
-            self.data.append({
-                'target_id':ent_vocab[target_id],
-                'source_id':ent_vocab[source_id],
-                'MASK_position':0
-            })
+            if mode == "train":
+                self.data.append({
+                    'target_id':ent_vocab[target_id],
+                    'source_id':ent_vocab[source_id],
+                    'MASK_position':0
+                })
             self.data.append({
                 'target_id':ent_vocab[target_id],
                 'source_id':ent_vocab[source_id],
@@ -98,7 +99,7 @@ class PeerReadDataSet(Dataset):
         return (batch_x, batch_y)
 
 class AASCDataSet(Dataset):
-    def __init__(self, path, ent_vocab, MAX_LEN, matrix):
+    def __init__(self, path, ent_vocab, MAX_LEN, matrix,mode="train"):
         self.path = path
         self.dirname = os.path.dirname(path)
         self.filename = os.path.basename(path)
@@ -109,11 +110,12 @@ class AASCDataSet(Dataset):
         target_ids = df["target_id"]
         source_ids = df["source_id"]
         for i,(target_id,source_id) in enumerate(zip(target_ids,source_ids)):
-            self.data.append({
-                'target_id':ent_vocab[target_id],
-                'source_id':ent_vocab[source_id],
-                'MASK_position':0
-            })
+            if mode == "train":
+                self.data.append({
+                    'target_id':ent_vocab[target_id],
+                    'source_id':ent_vocab[source_id],
+                    'MASK_position':0
+                })
             self.data.append({
                 'target_id':ent_vocab[target_id],
                 'source_id':ent_vocab[source_id],
@@ -209,9 +211,9 @@ def load_PeerRead_graph_data(path,frequency,MAX_LEN):
     matrix_test = makecitationmatrix_PeerRead(path_test,path_emb_test,entvocab)
     path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,frequency)
     dataset_train = PeerReadDataSet(path_train,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_train)
-    dataset_test = PeerReadDataSet(path_test,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_test)
+    dataset_test = PeerReadDataSet(path_test,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_test,mode="test")
     dataset_train_frequency5 = PeerReadDataSet(path_train_frequency5,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_train)
-    dataset_test_frequency5 = PeerReadDataSet(path_test_frequency5,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_test)
+    dataset_test_frequency5 = PeerReadDataSet(path_test_frequency5,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_test,mode="test")
     return dataset_train,dataset_test_frequency5,entvocab
 
 #入力: directory
@@ -265,9 +267,9 @@ def load_AASC_graph_data(path,frequency,MAX_LEN):
     matrix_test = makecitationmatrix_AASC(path_test,path_emb_test,entvocab)
     path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,frequency)
     dataset_train = AASCDataSet(path_train,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_train)
-    dataset_test = AASCDataSet(path_test,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_test)
+    dataset_test = AASCDataSet(path_test,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_test,mode="test")
     dataset_train_frequency5 = AASCDataSet(path_train_frequency5,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_train)
-    dataset_test_frequency5 = AASCDataSet(path_test_frequency5,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_test)
+    dataset_test_frequency5 = AASCDataSet(path_test_frequency5,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_test,mode="test")
     return dataset_train,dataset_test_frequency5,entvocab
 
 #AASCのnode classificationデータを読み込む^
@@ -290,19 +292,18 @@ def load_data_SVM(model,entvocab):
             if task not in taskdict:
                 taskn += 1
                 taskdict[task] = taskn
-            masked_lm_labels1 = torch.tensor([[-1] *512])
-            position_ids1 = torch.tensor([[i for i in range(512)]])
-            token_type_ids1 = torch.tensor([[1] + [0]*511])
-            input_ids1 = torch.tensor([[entvocab[paper]] + [-1]*511])
-            adj = torch.ones(1, 1, dtype=torch.int)
-            adj = torch.cat((adj,torch.ones(511,adj.shape[1],dtype=torch.int)),dim=0)
-            adj = torch.cat((adj,torch.zeros(512,511,dtype=torch.int)),dim=1)
             if i % 1000 == 0:
                 print("all")
                 print(len1)
                 print(i)
-            output = model(input_ids=input_ids1.cuda(),position_ids=position_ids1.cuda(),token_type_ids=token_type_ids1.cuda(),masked_lm_labels=masked_lm_labels1.cuda(),attention_mask=torch.stack([adj],dim=0).cuda())
-            entity_logits = output["sequence_output"][0][0]
+            target_ids = torch.tensor([entvocab[paper]])
+            position_ids = torch.tensor([[i for i in range(3)]])
+            token_type_ids = torch.tensor([[1] + [0]*2])
+            adj = torch.ones(1, 1, dtype=torch.int)
+            adj = torch.cat((adj,torch.ones(2,adj.shape[1],dtype=torch.int)),dim=0)
+            adj = torch.cat((adj,torch.zeros(3,2,dtype=torch.int)),dim=1)
+            outputs = model.get_embeddings(target_ids=target_ids.cuda(),position_ids=position_ids.cuda(),token_type_ids=token_type_ids.cuda(),attention_masks=adj.cuda())
+            entity_logits = outputs["sequence_output"][0][0]
             X_train.append(np.array(entity_logits.cpu()))
             y_train.append(taskdict[task])
         ftest = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_test.txt")
@@ -312,15 +313,14 @@ def load_data_SVM(model,entvocab):
             l = line[:-1].split("\t")
             paper = l[0]
             task = l[1]
-            masked_lm_labels1 = torch.tensor([[-1] *512])
-            position_ids1 = torch.tensor([[i for i in range(512)]])
-            token_type_ids1 = torch.tensor([[1] + [0]*511])
-            input_ids1 = torch.tensor([[entvocab[paper]] + [-1]*511])
+            target_ids = torch.tensor([entvocab[paper]])
+            position_ids = torch.tensor([[i for i in range(3)]])
+            token_type_ids = torch.tensor([[1] + [0]*2])
             adj = torch.ones(1, 1, dtype=torch.int)
-            adj = torch.cat((adj,torch.ones(511,adj.shape[1],dtype=torch.int)),dim=0)
-            adj = torch.cat((adj,torch.zeros(512,511,dtype=torch.int)),dim=1)
-            output = model(input_ids=input_ids1.cuda(),position_ids=position_ids1.cuda(),token_type_ids=token_type_ids1.cuda(),masked_lm_labels=masked_lm_labels1.cuda(),attention_mask=torch.stack([adj],dim=0).cuda())
-            entity_logits = output["sequence_output"][0][0]
+            adj = torch.cat((adj,torch.ones(2,adj.shape[1],dtype=torch.int)),dim=0)
+            adj = torch.cat((adj,torch.zeros(3,2,dtype=torch.int)),dim=1)
+            outputs = model.get_embeddings(target_ids=target_ids.cuda(),position_ids=position_ids.cuda(),token_type_ids=token_type_ids.cuda(),attention_masks=adj.cuda())
+            entity_logits = outputs["sequence_output"][0][0]
             X_test.append(np.array(entity_logits.cpu()))
             y_test.append(taskdict[task])
     return X_train,y_train,X_test,y_test
@@ -343,26 +343,24 @@ def load_data_intent_identification(model,entvocab):
             if intent not in intentdict:
                 intentn += 1
                 intentdict[intent] = intentn
-            masked_lm_labels = torch.tensor([[-1] *3])
+            target_ids = torch.tensor([entvocab[target_id]])
             position_ids = torch.tensor([[i for i in range(3)]])
             token_type_ids = torch.tensor([[1] + [0]*2])
-            input_ids = torch.tensor([[entvocab[target_id]] + [-1]*2])
             adj = torch.ones(1, 1, dtype=torch.int)
             adj = torch.cat((adj,torch.ones(2,adj.shape[1],dtype=torch.int)),dim=0)
             adj = torch.cat((adj,torch.zeros(3,2,dtype=torch.int)),dim=1)
-            output = model(input_ids=input_ids.cuda(),position_ids=position_ids.cuda(),token_type_ids=token_type_ids.cuda(),masked_lm_labels=masked_lm_labels.cuda(),attention_mask=torch.stack([adj],dim=0).cuda())
-            target_logits = output["sequence_output"][0][0]
-            masked_lm_labels = torch.tensor([[-1] *3])
+            outputs = model.get_embeddings(target_ids=target_ids.cuda(),position_ids=position_ids.cuda(),token_type_ids=token_type_ids.cuda(),attention_masks=adj.cuda())
+            target_logits = outputs["sequence_output"][0][0]
+            target_ids = torch.tensor([entvocab[source_id]])
             position_ids = torch.tensor([[i for i in range(3)]])
             token_type_ids = torch.tensor([[1] + [0]*2])
-            input_ids = torch.tensor([[entvocab[source_id]] + [-1]*2])
             adj = torch.ones(1, 1, dtype=torch.int)
             adj = torch.cat((adj,torch.ones(2,adj.shape[1],dtype=torch.int)),dim=0)
             adj = torch.cat((adj,torch.zeros(3,2,dtype=torch.int)),dim=1)
-            output = model(input_ids=input_ids.cuda(),position_ids=position_ids.cuda(),token_type_ids=token_type_ids.cuda(),masked_lm_labels=masked_lm_labels.cuda(),attention_mask=torch.stack([adj],dim=0).cuda())
-            source_logits = output["sequence_output"][0][0]
+            outputs = model.get_embeddings(target_ids=target_ids.cuda(),position_ids=position_ids.cuda(),token_type_ids=token_type_ids.cuda(),attention_masks=adj.cuda())
+            source_logits = outputs["sequence_output"][0][0]
             X.append(np.concatenate([np.array(target_logits.cpu()),np.array(source_logits.cpu())]))
-            y.append(taskdict[task])
+            y.append(intentdict[intent])
     return X,y
 
 if __name__ == "__main__":

@@ -6,32 +6,35 @@ import numpy as np
 import torch
 from torch import optim
 import torch.nn as nn
-from transformers import RobertaConfig, RobertaTokenizer
-from transformers import BertConfig, BertTokenizer, BertForMaskedLM
-
+from transformers import BertConfig, BertTokenizer, BertForMaskedLM, BertModel
 import fitlog
-from fastNLP import FitlogCallback, WarmupCallback, GradientClipCallback
-from fastNLP import RandomSampler, TorchLoaderIter, LossInForward, Trainer, Tester
+from torch.utils.data import TensorDataset, random_split
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+import json
 
 sys.path.append('../')
 from model import PTBCN
 from metrics import MacroMetric
 from metrics import Evaluation
 from utils import build_ent_vocab
-from dataloader import load_AASC_graph_data,load_PeerRead_graph_data,load_data_SVM, load_data_intent_identification
+from dataloader import load_AASC_graph_data,load_PeerRead_graph_data,load_data_SVM
 from collections import Counter
 from itertools import product
 import collections
 from tqdm import tqdm
 import random
 import pickle
+from collections import Counter
 
 from sklearn import svm
 from sklearn.metrics import accuracy_score,f1_score
 
 import pandas as pd
 import csv
-
+from transformers import BertForSequenceClassification, AdamW, BertConfig
+from transformers import get_linear_schedule_with_warmup
+from imblearn import over_sampling
+import math
 
 
 def parse_args():
@@ -134,12 +137,62 @@ def node_classification(args,epoch,model,ent_vocab):
         print("ミクロ平均＝", f1_score(y_test, test_label,average="micro"))
         print(collections.Counter(test_label))
 
+def load_data_intent_identification():
+    intentn = -1
+    intentdict = {}
+    #f = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/id2intent.txt")
+    f = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/train.jsonl")
+    X_train = []
+    y_train = []
+    with torch.no_grad():
+        jsl = []
+        for i,line in enumerate(f):
+            js = json.loads(line)
+            jsl.append(js)
+        for js in jsl:
+            if i == 0:
+                continue
+            target_id = js["citing_paper_id"]
+            source_id = js["cited_paper_id"]
+            #target_id = l[0]
+            #source_id = l[1]
+            intent = js["intent"]
+            text = js["text"]
+            if intent not in intentdict:
+                intentn += 1
+                intentdict[intent] = intentn
+            X_train.append({"text":text,"intent":intent})
+            #X.append({"left_citated_text":left_citated_text,"right_citated_text":right_citated_text})
+            y_train.append(intentdict[intent])
+    f = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/test.jsonl")
+    X_test = []
+    y_test = []
+    with torch.no_grad():
+        jsl = []
+        for i,line in enumerate(f):
+            js = json.loads(line)
+            jsl.append(js)
+        for js in jsl:
+            if i == 0:
+                continue
+            target_id = js["citing_paper_id"]
+            source_id = js["cited_paper_id"]
+            #target_id = l[0]
+            #source_id = l[1]
+            intent = js["intent"]
+            text = js["text"]
+            if intent not in intentdict:
+                intentn += 1
+                intentdict[intent] = intentn
+            X_test.append({"text":text,"intent":intent})
+            #X.append({"left_citated_text":left_citated_text,"right_citated_text":right_citated_text})
+            y_test.append(intentdict[intent])
+    return X_train,y_train,X_test,y_test
+
 def intent_identification(args,epoch,model,ent_vocab):
     fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_intentidentification_randomMASK.txt","w")
-    X,y = load_data_intent_identification(model,ent_vocab)
+    X_train,y_train,X_test,y_test = load_data_intent_identification(model,ent_vocab)
     print("intent identification data load done")
-    l = [i for i in range(len(X))]
-    random.shuffle(l)
     for epoch in range(5):
         if epoch == 0:
             X_train = [X[i] for i in l[:len(l)//5]]
@@ -202,9 +255,36 @@ def get_embeddings(model,ent_vocab,epoch):
         pathentity = "/home/ohagi_masaya/TransBasedCitEmb/model/"+"AASC"+"epoch"+str(epoch)+".pickle"
         f = open(pathentity,"wb")
         pickle.dump(entityl,f)
+def oversampling(X_train,y_train):
+    ydict = {}
+    for x,y in zip(X_train,y_train):
+        if y not in ydict:
+            ydict[y] = [x]
+        else:
+            ydict[y].append(x)
+    numdict = {}
+    m = 0
+    for key in ydict:
+        numdict[key] = len(ydict[key])
+        m = max(m,numdict[key])
+    for key in numdict:
+        numdict[key] /= m
+    X_train_new = []
+    y_train_new = []
+    Xy_train_new = []
+    for key in numdict:
+        l = len(ydict[key]*min(math.floor(1/numdict[key]),3))
+        for x in ydict[key]*min(math.floor(1/numdict[key]),3):
+            Xy_train_new.append((x,key))
+    for x,y in Xy_train_new:
+        X_train_new.append(x)
+        y_train_new.append(y)
+    return X_train_new,y_train_new
+
 
 def main():
     args = parse_args()
+    batch_size = 12
 
     if args.debug:
         fitlog.debug()
@@ -213,10 +293,11 @@ def main():
 
     #load entity embeddings
     #TODO 初期化をSPECTERで行う
-    train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir,args.frequency,args.WINDOW_SIZE,args.MAX_LEN,args.pretrained_model)
-    num_ent = len(ent_vocab)
+    #train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir,args.frequency,args.WINDOW_SIZE,args.MAX_LEN,args.pretrained_model)
+    #num_ent = len(ent_vocab)
 
     # load parameters
+    """
     if args.pretrained_model == "scibert":
         model = PTBCN.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased',num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN)
     else:
@@ -244,31 +325,184 @@ def main():
 
     gradient_clip_callback = GradientClipCallback(clip_value=1, clip_type='norm')
     warmup_callback = WarmupCallback(warmup=args.warm_up, schedule='linear')
-
+    """
     bsz = args.batch_size // args.grad_accumulation
     if args.data_dir[-1] == "/":
         data_dir_modelname = os.path.basename(args.data_dir[:-1])
     else:
         data_dir_modelname = os.path.basename(args.data_dir)
-    model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+".bin"
-    pretrained_model_path = os.path.join(args.model_path,model_name)
-    print("train start")
-    for epoch in range(1,args.epoch+1):
-        train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir,args.frequency,args.WINDOW_SIZE,args.MAX_LEN,args.pretrained_model)
-        #train iter
-        train_data_iter = TorchLoaderIter(dataset=train_set,batch_size=bsz,sampler=RandomSampler(),num_workers=os.cpu_count()//2,collate_fn=train_set.collate_fn)
-        trainer = Trainer(train_data=train_data_iter,model=model,optimizer=optimizer,loss=LossInForward(),batch_size=bsz,update_every=args.grad_accumulation,n_epochs=1,metrics=None,callbacks=[gradient_clip_callback, warmup_callback],device=devices,save_path=args.model_path,use_tqdm=True)
-        trainer.train(load_best_model=False)
-        if epoch % 5 == 0:
-            #train iter
-            predict(args,epoch,model,ent_vocab,test_set)
-            node_classification(args,epoch,model,ent_vocab)
-            intent_identification(args,epoch,model,ent_vocab) 
-            #save model
-            model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_randomMASK.bin"
-            torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
-            get_embeddings(model,ent_vocab,epoch)
-    print("train end")
+    X_train,y_train,X_test,y_test = load_data_intent_identification()
+    ydict = {}
+    for i in y_train+y_test:
+        if i not in ydict:
+            ydict[i] = 1
+        else:
+            ydict[i] += 1
+    print(ydict)
+    """
+    l = [i for i in range(len(X))]
+    random.shuffle(l)
+    for epoch in range(5):
+        if epoch == 0:
+            X_test = [X[i] for i in l[:len(l)//5]]
+            y_test = [y[i] for i in l[:len(l)//5]]
+            X_train = [X[i] for i in l[len(l)//5:]]
+            y_train = [y[i] for i in l[len(l)//5:]]
+        elif epoch == 4:
+            X_test = [X[i] for i in l[len(l)*epoch//5:]]
+            y_test = [y[i] for i in l[len(l)*epoch//5:]]
+            X_train = [X[i] for i in l[:len(l)*epoch//5]]
+            y_train = [y[i] for i in l[:len(l)*epoch//5]]
+        else:
+            X_test = [X[i] for i in l[len(l)*epoch//5:len(l)*(epoch+1)//5]]
+            y_test = [y[i] for i in l[len(l)*epoch//5:len(l)*(epoch+1)//5]]
+            X_train = [X[i] for i in l[:len(l)*epoch//5]+l[len(l)*(epoch+1)//5:]]
+            y_train = [y[i] for i in l[:len(l)*epoch//5]+l[len(l)*(epoch+1)//5:]]
+        #X_train, y_train = oversampling(X_train, y_train)
+    """
+    print(collections.Counter(y_train))
+    model = BertModel.from_pretrained("../pretrainedmodel/scibert_scivocab_uncased")
+    tokenizer = BertTokenizer.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased', do_lower_case=True)
+    optimizer = AdamW(model.parameters(),
+              lr = 5e-6, # args.learning_rate - default is 5e-5, our notebook had 2e-5
+              eps = 1e-8 # args.adam_epsilon  - default is 1e-8.
+            )
+    epochs = 50
+    input_ids = []
+    attention_masks = []
+    num_label = max(y_train+y_test)+1
+    for x,y1 in zip(X_train,y_train):
+        text = x["text"]
+        """
+        left_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x["left_citated_text"]))
+        right_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x["right_citated_text"]))
+        """
+        text_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
+        xlen = len(text_tokenized[:512])
+        #xlen = len(left_citation_tokenized[-256:])+len(right_citation_tokenized[:256])
+        word_pad = 512-xlen
+        tokenized_ids = text_tokenized[:512]+[0]*(512-xlen)
+        #tokenized_ids = left_citation_tokenized[-256:] + right_citation_tokenized[:256] + [0]*(512-xlen)
+        adj = torch.ones(xlen, xlen, dtype=torch.int)
+        adj = torch.cat((adj,torch.ones(word_pad,adj.shape[1],dtype=torch.int)),dim=0)
+        adj = torch.cat((adj,torch.zeros(512,word_pad,dtype=torch.int)),dim=1)
+        # Add the encoded sentence to the list.
+        input_ids.append(tokenized_ids)
+        # And its attention mask (simply differentiates padding from non-padding).
+        attention_masks.append(adj)
+    print("load train done")
+    # Convert the lists into tensors.
+    input_ids = torch.tensor(input_ids)
+    attention_masks = torch.stack(attention_masks, dim=0)
+    labels = torch.tensor(y_train)
+    train_dataset = TensorDataset(input_ids, attention_masks, labels)
+    input_ids = []
+    attention_masks = []
+    for x,y1 in zip(X_test,y_test):
+        text = x["text"]
+        text_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
+        xlen = len(text_tokenized[:512])
+        #xlen = len(left_citation_tokenized[-256:])+len(right_citation_tokenized[:256])
+        word_pad = 512-xlen
+        tokenized_ids = text_tokenized[:512]+[0]*(512-xlen)
+        """
+        left_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x["left_citated_text"]))
+        right_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x["right_citated_text"]))
+        xlen = len(left_citation_tokenized[-256:])+len(right_citation_tokenized[:256])
+        word_pad = 512-xlen
+        tokenized_ids = left_citation_tokenized[-256:] + right_citation_tokenized[:256] + [0]*(512-xlen)
+        """
+        adj = torch.ones(xlen, xlen, dtype=torch.int)
+        adj = torch.cat((adj,torch.ones(word_pad,adj.shape[1],dtype=torch.int)),dim=0)
+        adj = torch.cat((adj,torch.zeros(512,word_pad,dtype=torch.int)),dim=1)
+        # Add the encoded sentence to the list.
+        input_ids.append(tokenized_ids)
+        # And its attention mask (simply differentiates padding from non-padding).
+        attention_masks.append(adj)
+    print("load test done")
+    # Convert the lists into tensors.
+    input_ids = torch.tensor(input_ids)
+    attention_masks = torch.stack(attention_masks, dim=0)
+    labels = torch.tensor(y_test)
+    test_dataset = TensorDataset(input_ids, attention_masks, labels)
+    train_dataloader = DataLoader(
+        train_dataset,  # The training samples.
+        sampler = RandomSampler(train_dataset), # Select batches randomly
+        batch_size = batch_size # Trains with this batch size.
+    )
+
+    test_dataloader = DataLoader(
+        test_dataset,  # The training samples.
+        sampler = None, # Select batches randomly
+        batch_size = 1 # Trains with this batch size.
+    )
+    total_steps = len(train_dataloader) * epochs
+    scheduler = get_linear_schedule_with_warmup(optimizer,
+                                        num_warmup_steps = 0, # Default value in run_glue.py
+                                        num_training_steps = total_steps)
+    model = BertForSequenceClassification.from_pretrained(
+        "../pretrainedmodel/scibert_scivocab_uncased", # Use the 12-layer BERT model, with an uncased vocab.
+        num_labels = num_label, # The number of output labels--2 for binary classification.
+                        # You can increase this for multi-class tasks.
+        output_attentions = False, # Whether the model returns attentions weights.
+        output_hidden_states = False, # Whether the model returns all hidden-states.
+    )
+    model.cuda()
+    model.train()
+    for epoch_i in range(0, epochs):
+        total_train_loss = 0
+        for step, batch in enumerate(train_dataloader):
+            model.zero_grad()
+            b_input_ids = batch[0].cuda()
+            b_input_mask = batch[1].cuda()
+            b_labels = batch[2].cuda()
+            loss, logits = model(b_input_ids,
+                             token_type_ids=None,
+                             attention_mask=b_input_mask,
+                             labels=b_labels)
+            total_train_loss += loss.item()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+            scheduler.step()
+        avg_train_loss = total_train_loss / len(train_dataloader)
+        if epoch_i % 10 == 0:
+            print(avg_train_loss)
+    total_eval_accuracy = 0
+    total_eval_loss = 0
+    nb_eval_steps = 0
+    pred = []
+    seikail = []
+    model.eval()
+    for batch in test_dataloader:
+        b_input_ids = batch[0].cuda()
+        b_input_mask = batch[1].cuda()
+        b_labels = batch[2].cuda()
+        with torch.no_grad():
+            (loss, logits) = model(b_input_ids, 
+                               token_type_ids=None, 
+                               attention_mask=b_input_mask,
+                               labels=b_labels)
+        
+            total_eval_loss += loss.item()
+            logits = logits.detach().cpu().numpy()
+            label_ids = b_labels.to('cpu').numpy()
+            pred += list(np.argmax(logits, axis=1))
+            seikail += list(label_ids)
+    print(collections.Counter(pred))
+    print("macro")
+    print(f1_score(seikail, pred, average='macro'))
+    print("micro")
+    print(f1_score(seikail, pred, average='micro'))
+    print("accuracy")
+    print(accuracy_score(seikail, pred))
+
+def flat_accuracy(preds, labels):
+    pred_flat = np.argmax(preds, axis=1).flatten()
+    labels_flat = labels.flatten()
+    return np.sum(pred_flat == labels_flat) / len(labels_flat)
+
+
 
 if __name__ == '__main__':
     main()
