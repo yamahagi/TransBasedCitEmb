@@ -225,27 +225,14 @@ def main():
     print('parameters of SciBERT has been loaded.')
 
     # fine-tune
-    no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight', 'layer_norm.bias', 'layer_norm.weight']
-    param_optimizer = list(model.named_parameters())
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)],
-         'weight_decay': args.weight_decay},
-        {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-    ]
-    optimizer = optim.AdamW(optimizer_grouped_parameters, lr=args.lr, betas=(0.9, args.beta), eps=1e-6)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
-    metrics = [MacroMetric(pred='pred', target='target')]
     devices = list(range(torch.cuda.device_count()))
     if torch.cuda.is_available():
         print("GPU OK")
     else:
         print("GPU NO")
 
-    gradient_clip_callback = GradientClipCallback(clip_value=1, clip_type='norm')
-    warmup_callback = WarmupCallback(warmup=args.warm_up, schedule='linear')
-
-    bsz = args.batch_size // args.grad_accumulation
     if args.data_dir[-1] == "/":
         data_dir_modelname = os.path.basename(args.data_dir[:-1])
     else:
@@ -256,9 +243,13 @@ def main():
     for epoch in range(1,args.epoch+1):
         train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir,args.frequency,args.WINDOW_SIZE,args.MAX_LEN,args.pretrained_model)
         #train iter
-        train_data_iter = TorchLoaderIter(dataset=train_set,batch_size=bsz,sampler=RandomSampler(),num_workers=os.cpu_count()//2,collate_fn=train_set.collate_fn)
-        trainer = Trainer(train_data=train_data_iter,model=model,optimizer=optimizer,loss=LossInForward(),batch_size=bsz,update_every=args.grad_accumulation,n_epochs=1,metrics=None,callbacks=[gradient_clip_callback, warmup_callback],device=devices,save_path=args.model_path,use_tqdm=True)
-        trainer.train(load_best_model=False)
+        train_dataloader = torch.utils.data.DataLoader(train_set, batch_size = 16, shuffle = True, num_workers = 2)
+        for (inputs,labels) in train_dataloader:
+            optimizer.zero_grad()
+            outputs = model(input_ids=inputs["input_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),masked_lm_labels=inputs["masked_lm_labels"].cuda(),attention_mask=inputs["attention_mask"].cuda())
+            loss = outputs["loss"]
+            loss.backward()
+            optimizer.step()
         if epoch % 5 == 0:
             #train iter
             predict(args,epoch,model,ent_vocab,test_set)
