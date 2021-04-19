@@ -250,7 +250,7 @@ class AASCDataSet(Dataset):
 
     def __getitem__(self, item):
         return self.data[item]
-
+    """
     def collate_fn(self, batch):
         input_keys = ['input_ids','masked_lm_labels',"position_ids","token_type_ids","n_word_nodes","attention_mask"]
         target_keys = ["masked_lm_labels","word_seq_len"]
@@ -293,6 +293,7 @@ class AASCDataSet(Dataset):
         for k, v in batch_y.items():
             batch_y[k] = torch.tensor(v)
         return (batch_x, batch_y)
+    """
 
 class AASCDataSet_eachMASK(Dataset):
     def __init__(self, path, ent_vocab,WINDOW_SIZE,MAX_LEN,pretrained_model):

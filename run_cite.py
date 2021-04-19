@@ -6,12 +6,9 @@ import numpy as np
 import torch
 from torch import optim
 import torch.nn as nn
-from transformers import RobertaConfig, RobertaTokenizer
 from transformers import BertConfig, BertTokenizer, BertForMaskedLM
 
 import fitlog
-from fastNLP import FitlogCallback, WarmupCallback, GradientClipCallback
-from fastNLP import RandomSampler, TorchLoaderIter, LossInForward, Trainer, Tester
 
 sys.path.append('../')
 from model import PTBCN
@@ -203,6 +200,48 @@ def get_embeddings(model,ent_vocab,epoch):
         f = open(pathentity,"wb")
         pickle.dump(entityl,f)
 
+def collate_fn(batch):
+    input_keys = ['input_ids','masked_lm_labels',"position_ids","token_type_ids","n_word_nodes","attention_mask"]
+    target_keys = ["masked_lm_labels","word_seq_len"]
+    max_words = self.MAX_LEN
+    batch_x = {n: [] for n in input_keys}
+    batch_y = {n: [] for n in target_keys}
+
+    for sample in batch:
+        word_pad = max_words - len(sample["input_ids"])
+        if word_pad > 0:
+            batch_x["input_ids"].append(sample["input_ids"]+[-1]*word_pad)
+            batch_x["position_ids"].append(sample["position_ids"]+[0]*word_pad)
+            batch_x["token_type_ids"].append(sample["token_type_ids"]+[0]*word_pad)
+            batch_x["n_word_nodes"].append(max_words)
+            batch_x["masked_lm_labels"].append(sample["masked_lm_labels"]+[-1]*word_pad)
+            adj = torch.ones(len(sample['input_ids']), len(sample['input_ids']), dtype=torch.int)
+            adj = torch.cat((adj,torch.ones(word_pad,adj.shape[1],dtype=torch.int)),dim=0)
+            adj = torch.cat((adj,torch.zeros(self.MAX_LEN,word_pad,dtype=torch.int)),dim=1)
+            #attention_maskは普通に文章内に対して1で文章外に対して0でいい
+            batch_x['attention_mask'].append(adj)
+            batch_y["masked_lm_labels"].append(sample["masked_lm_labels"]+[-1]*word_pad)
+            batch_y["word_seq_len"].append(len(sample["input_ids"]))
+        else:
+            batch_x["input_ids"].append(sample["input_ids"])
+            batch_x["position_ids"].append(sample["position_ids"])
+            batch_x["token_type_ids"].append(sample["token_type_ids"])
+            batch_x["n_word_nodes"].append(max_words)
+            batch_x["masked_lm_labels"].append(sample["masked_lm_labels"])
+            adj = torch.ones(len(sample['input_ids']), len(sample['input_ids']), dtype=torch.int)
+            #attention_maskは普通に文章内に対して1で文章外に対して0でいい
+            batch_x['attention_mask'].append(adj)
+            batch_y["masked_lm_labels"].append(sample["masked_lm_labels"])
+            batch_y["word_seq_len"].append(len(sample["input_ids"]))
+    for k, v in batch_x.items():
+        if k == 'attention_mask':
+            batch_x[k] = torch.stack(v, dim=0)
+        else:
+            batch_x[k] = torch.tensor(v)
+    for k, v in batch_y.items():
+        batch_y[k] = torch.tensor(v)
+    return (batch_x, batch_y)
+
 def main():
     args = parse_args()
 
@@ -243,7 +282,7 @@ def main():
     for epoch in range(1,args.epoch+1):
         train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir,args.frequency,args.WINDOW_SIZE,args.MAX_LEN,args.pretrained_model)
         #train iter
-        train_dataloader = torch.utils.data.DataLoader(train_set, batch_size = 16, shuffle = True, num_workers = 2)
+        train_dataloader = torch.utils.data.DataLoader(train_set, batch_size = args.batch_size, shuffle = True, num_workers = 2, collate_fn=collate_fn)
         for (inputs,labels) in train_dataloader:
             optimizer.zero_grad()
             outputs = model(input_ids=inputs["input_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),masked_lm_labels=inputs["masked_lm_labels"].cuda(),attention_mask=inputs["attention_mask"].cuda())

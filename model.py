@@ -66,7 +66,7 @@ class PTBCN(BertForMaskedLM):
                 'entity_pred': ent_predict,
                 'entity_logits': ent_logits,
                 'sequence_output': sequence_output}
-
+"""
 class PTBCNLONG(Longformer):
     config_class = LongformerConfig.from_pretrained('longformer-base-4096/')
     base_model_prefix = "longformer"
@@ -124,7 +124,7 @@ class PTBCNLONG(Longformer):
                 'entity_pred': ent_predict,
                 'entity_logits': ent_logits,
                 'sequence_output': sequence_output}
-
+"""
 class PTBCNCOKE(BertForMaskedLM):
     config_class = BertConfig
     base_model_prefix = "bert"
