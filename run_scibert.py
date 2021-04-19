@@ -1,5 +1,6 @@
 import os
 import sys
+from collections import OrderedDict
 
 import argparse
 import numpy as np
@@ -43,7 +44,7 @@ def parse_args():
     parser.add_argument('--dataset', type=str, default='AASC',help="AASC or PeerRead")
     parser.add_argument('--log_dir', type=str, default='./logs/',
                         help="fitlog directory path")
-    parser.add_argument('--batch_size', type=int, default=32, help="batch size")
+    parser.add_argument('--batch_size', type=int, default=4, help="batch size")
     parser.add_argument('--frequency', type=int, default=5, help="frequency to remove rare entity")
     parser.add_argument('--lr', type=float, default=5e-5, help="learning rate")
     parser.add_argument('--beta', type=float, default=0.999, help="beta_2 of adam")
@@ -189,9 +190,31 @@ def load_data_intent_identification():
             y_test.append(intentdict[intent])
     return X_train,y_train,X_test,y_test
 
+def load_data_intent_identification_AASC():
+    intentn = -1
+    intentdict = {}
+    f = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/id2intent.txt")
+    X = []
+    y = []
+    for i,line in enumerate(f):
+        if i == 0:
+            continue
+        l = line.rstrip("\n").split()
+        target_id = l[0]
+        source_id = l[1]
+        intent = l[2]
+        left_citated_text = l[3]
+        right_citated_text = l[4]
+        if intent not in intentdict:
+            intentn += 1
+            intentdict[intent] = intentn
+        X.append({"left_citated_text":left_citated_text,"right_citated_text":right_citated_text})
+        y.append(intentdict[intent])
+    return X,y
+
 def intent_identification(args,epoch,model,ent_vocab):
     fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_intentidentification_randomMASK.txt","w")
-    X_train,y_train,X_test,y_test = load_data_intent_identification(model,ent_vocab)
+    X_train,y_train,X_test,y_test = load_data_intent_identification_AASC(model,ent_vocab)
     print("intent identification data load done")
     for epoch in range(5):
         if epoch == 0:
@@ -284,7 +307,7 @@ def oversampling(X_train,y_train):
 
 def main():
     args = parse_args()
-    batch_size = 12
+    batch_size = 4
 
     if args.debug:
         fitlog.debug()
@@ -326,12 +349,20 @@ def main():
     gradient_clip_callback = GradientClipCallback(clip_value=1, clip_type='norm')
     warmup_callback = WarmupCallback(warmup=args.warm_up, schedule='linear')
     """
-    bsz = args.batch_size // args.grad_accumulation
     if args.data_dir[-1] == "/":
         data_dir_modelname = os.path.basename(args.data_dir[:-1])
     else:
         data_dir_modelname = os.path.basename(args.data_dir)
-    X_train,y_train,X_test,y_test = load_data_intent_identification()
+    X,y = load_data_intent_identification_AASC()
+    ydict = {}
+    for i in y:
+        if i not in ydict:
+            ydict[i] = 1
+        else:
+            ydict[i] += 1
+    print(ydict)
+    """
+    #X_train,y_train,X_test,y_test = load_data_intent_identification()
     ydict = {}
     for i in y_train+y_test:
         if i not in ydict:
@@ -341,6 +372,7 @@ def main():
     print(ydict)
     """
     l = [i for i in range(len(X))]
+    random.seed(10)
     random.shuffle(l)
     for epoch in range(5):
         if epoch == 0:
@@ -358,144 +390,147 @@ def main():
             y_test = [y[i] for i in l[len(l)*epoch//5:len(l)*(epoch+1)//5]]
             X_train = [X[i] for i in l[:len(l)*epoch//5]+l[len(l)*(epoch+1)//5:]]
             y_train = [y[i] for i in l[:len(l)*epoch//5]+l[len(l)*(epoch+1)//5:]]
-        #X_train, y_train = oversampling(X_train, y_train)
-    """
-    print(collections.Counter(y_train))
-    model = BertModel.from_pretrained("../pretrainedmodel/scibert_scivocab_uncased")
-    tokenizer = BertTokenizer.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased', do_lower_case=True)
-    optimizer = AdamW(model.parameters(),
-              lr = 5e-6, # args.learning_rate - default is 5e-5, our notebook had 2e-5
-              eps = 1e-8 # args.adam_epsilon  - default is 1e-8.
-            )
-    epochs = 50
-    input_ids = []
-    attention_masks = []
-    num_label = max(y_train+y_test)+1
-    for x,y1 in zip(X_train,y_train):
-        text = x["text"]
-        """
-        left_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x["left_citated_text"]))
-        right_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x["right_citated_text"]))
-        """
-        text_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
-        xlen = len(text_tokenized[:512])
-        #xlen = len(left_citation_tokenized[-256:])+len(right_citation_tokenized[:256])
-        word_pad = 512-xlen
-        tokenized_ids = text_tokenized[:512]+[0]*(512-xlen)
-        #tokenized_ids = left_citation_tokenized[-256:] + right_citation_tokenized[:256] + [0]*(512-xlen)
-        adj = torch.ones(xlen, xlen, dtype=torch.int)
-        adj = torch.cat((adj,torch.ones(word_pad,adj.shape[1],dtype=torch.int)),dim=0)
-        adj = torch.cat((adj,torch.zeros(512,word_pad,dtype=torch.int)),dim=1)
-        # Add the encoded sentence to the list.
-        input_ids.append(tokenized_ids)
-        # And its attention mask (simply differentiates padding from non-padding).
-        attention_masks.append(adj)
-    print("load train done")
-    # Convert the lists into tensors.
-    input_ids = torch.tensor(input_ids)
-    attention_masks = torch.stack(attention_masks, dim=0)
-    labels = torch.tensor(y_train)
-    train_dataset = TensorDataset(input_ids, attention_masks, labels)
-    input_ids = []
-    attention_masks = []
-    for x,y1 in zip(X_test,y_test):
-        text = x["text"]
-        text_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
-        xlen = len(text_tokenized[:512])
-        #xlen = len(left_citation_tokenized[-256:])+len(right_citation_tokenized[:256])
-        word_pad = 512-xlen
-        tokenized_ids = text_tokenized[:512]+[0]*(512-xlen)
-        """
-        left_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x["left_citated_text"]))
-        right_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x["right_citated_text"]))
-        xlen = len(left_citation_tokenized[-256:])+len(right_citation_tokenized[:256])
-        word_pad = 512-xlen
-        tokenized_ids = left_citation_tokenized[-256:] + right_citation_tokenized[:256] + [0]*(512-xlen)
-        """
-        adj = torch.ones(xlen, xlen, dtype=torch.int)
-        adj = torch.cat((adj,torch.ones(word_pad,adj.shape[1],dtype=torch.int)),dim=0)
-        adj = torch.cat((adj,torch.zeros(512,word_pad,dtype=torch.int)),dim=1)
-        # Add the encoded sentence to the list.
-        input_ids.append(tokenized_ids)
-        # And its attention mask (simply differentiates padding from non-padding).
-        attention_masks.append(adj)
-    print("load test done")
-    # Convert the lists into tensors.
-    input_ids = torch.tensor(input_ids)
-    attention_masks = torch.stack(attention_masks, dim=0)
-    labels = torch.tensor(y_test)
-    test_dataset = TensorDataset(input_ids, attention_masks, labels)
-    train_dataloader = DataLoader(
-        train_dataset,  # The training samples.
-        sampler = RandomSampler(train_dataset), # Select batches randomly
-        batch_size = batch_size # Trains with this batch size.
-    )
+        print(collections.Counter(y_train))
+        tokenizer = BertTokenizer.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased', do_lower_case=True)
+        epochs =50
+        input_ids = []
+        attention_masks = []
+        num_label = max(y_train+y_test)+1
+        for x,y1 in zip(X_train,y_train):
+            left_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x["left_citated_text"]))
+            right_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x["right_citated_text"]))
+            text_tokenized = left_citation_tokenized[-256:]+right_citation_tokenized[:256]
+            """
+            text = x["text"]
+            text_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
+            """
+            xlen = len(text_tokenized[:512])
+            #xlen = len(left_citation_tokenized[-256:])+len(right_citation_tokenized[:256])
+            word_pad = 512-xlen
+            tokenized_ids = text_tokenized[:512]+[0]*(512-xlen)
+            #tokenized_ids = left_citation_tokenized[-256:] + right_citation_tokenized[:256] + [0]*(512-xlen)
+            adj = torch.ones(xlen, xlen, dtype=torch.int)
+            adj = torch.cat((adj,torch.ones(word_pad,adj.shape[1],dtype=torch.int)),dim=0)
+            adj = torch.cat((adj,torch.zeros(512,word_pad,dtype=torch.int)),dim=1)
+            # Add the encoded sentence to the list.
+            input_ids.append(tokenized_ids)
+            # And its attention mask (simply differentiates padding from non-padding).
+            attention_masks.append(adj)
+        print("load train done")
+        # Convert the lists into tensors.
+        input_ids = torch.tensor(input_ids)
+        attention_masks = torch.stack(attention_masks, dim=0)
+        labels = torch.tensor(y_train)
+        train_dataset = TensorDataset(input_ids, attention_masks, labels)
+        input_ids = []
+        attention_masks = []
+        for x,y1 in zip(X_test,y_test):
+            """
+            text = x["text"]
+            text_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
+            """
+            left_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x["left_citated_text"]))
+            right_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x["right_citated_text"]))
+            text_tokenized = left_citation_tokenized[-256:]+right_citation_tokenized[:256]
+            xlen = len(text_tokenized[:512])
+            #xlen = len(left_citation_tokenized[-256:])+len(right_citation_tokenized[:256])
+            word_pad = 512-xlen
+            tokenized_ids = text_tokenized[:512]+[0]*(512-xlen)
+            adj = torch.ones(xlen, xlen, dtype=torch.int)
+            adj = torch.cat((adj,torch.ones(word_pad,adj.shape[1],dtype=torch.int)),dim=0)
+            adj = torch.cat((adj,torch.zeros(512,word_pad,dtype=torch.int)),dim=1)
+            # Add the encoded sentence to the list.
+            input_ids.append(tokenized_ids)
+            # And its attention mask (simply differentiates padding from non-padding).
+            attention_masks.append(adj)
+        print("load test done")
+        # Convert the lists into tensors.
+        input_ids = torch.tensor(input_ids)
+        attention_masks = torch.stack(attention_masks, dim=0)
+        labels = torch.tensor(y_test)
+        test_dataset = TensorDataset(input_ids, attention_masks, labels)
+        train_dataloader = DataLoader(
+            train_dataset,  # The training samples.
+            sampler = RandomSampler(train_dataset), # Select batches randomly
+            batch_size = batch_size # Trains with this batch size.
+        )
 
-    test_dataloader = DataLoader(
-        test_dataset,  # The training samples.
-        sampler = None, # Select batches randomly
-        batch_size = 1 # Trains with this batch size.
-    )
-    total_steps = len(train_dataloader) * epochs
-    scheduler = get_linear_schedule_with_warmup(optimizer,
-                                        num_warmup_steps = 0, # Default value in run_glue.py
-                                        num_training_steps = total_steps)
-    model = BertForSequenceClassification.from_pretrained(
-        "../pretrainedmodel/scibert_scivocab_uncased", # Use the 12-layer BERT model, with an uncased vocab.
-        num_labels = num_label, # The number of output labels--2 for binary classification.
-                        # You can increase this for multi-class tasks.
-        output_attentions = False, # Whether the model returns attentions weights.
-        output_hidden_states = False, # Whether the model returns all hidden-states.
-    )
-    model.cuda()
-    model.train()
-    for epoch_i in range(0, epochs):
-        total_train_loss = 0
-        for step, batch in enumerate(train_dataloader):
-            model.zero_grad()
+        test_dataloader = DataLoader(
+            test_dataset,  # The training samples.
+            sampler = None, # Select batches randomly
+            batch_size = 1 # Trains with this batch size.
+        )
+        total_steps = len(train_dataloader) * epochs
+        model = BertForSequenceClassification.from_pretrained(
+            "../pretrainedmodel/scibert_scivocab_uncased", # Use the 12-layer BERT model, with an uncased vocab.
+            num_labels = num_label, # The number of output labels--2 for binary classification.
+                            # You can increase this for multi-class tasks.
+            output_attentions = False, # Whether the model returns attentions weights.
+            output_hidden_states = False, # Whether the model returns all hidden-states.
+        )
+        optimizer = AdamW(model.parameters(),
+                  lr = 5e-6, # args.learning_rate - default is 5e-5, our notebook had 2e-5
+                  eps = 1e-8 # args.adam_epsilon  - default is 1e-8.
+                )
+        scheduler = get_linear_schedule_with_warmup(optimizer,
+                                            num_warmup_steps = 0, # Default value in run_glue.py
+                                            num_training_steps = total_steps)
+        model.cuda()
+        model.train()
+        for epoch_i in range(0, epochs):
+            total_train_loss = 0
+            with tqdm(total=len(train_dataloader),unit="batch") as pbar:
+                for step, batch in enumerate(train_dataloader):
+                    model.zero_grad()
+                    b_input_ids = batch[0].cuda()
+                    b_input_mask = batch[1].cuda()
+                    b_labels = batch[2].cuda()
+                    outputs = model(b_input_ids,
+                                     token_type_ids=None,
+                                     attention_mask=b_input_mask,
+                                     labels=b_labels)
+                    loss = outputs["loss"]
+                    logits = outputs["logits"]
+                    total_train_loss += loss.item()
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    optimizer.step()
+                    scheduler.step()
+                    pbar.set_postfix(OrderedDict(
+                        epoch="{:>10}".format(epoch_i),
+                        loss="{:.4f}".format(loss.item())))
+                avg_train_loss = total_train_loss / len(train_dataloader)
+            if epoch_i % 2 == 0:
+                print(avg_train_loss)
+        total_eval_accuracy = 0
+        total_eval_loss = 0
+        nb_eval_steps = 0
+        pred = []
+        seikail = []
+        model.eval()
+        for batch in test_dataloader:
             b_input_ids = batch[0].cuda()
             b_input_mask = batch[1].cuda()
             b_labels = batch[2].cuda()
-            loss, logits = model(b_input_ids,
-                             token_type_ids=None,
-                             attention_mask=b_input_mask,
-                             labels=b_labels)
-            total_train_loss += loss.item()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-            scheduler.step()
-        avg_train_loss = total_train_loss / len(train_dataloader)
-        if epoch_i % 10 == 0:
-            print(avg_train_loss)
-    total_eval_accuracy = 0
-    total_eval_loss = 0
-    nb_eval_steps = 0
-    pred = []
-    seikail = []
-    model.eval()
-    for batch in test_dataloader:
-        b_input_ids = batch[0].cuda()
-        b_input_mask = batch[1].cuda()
-        b_labels = batch[2].cuda()
-        with torch.no_grad():
-            (loss, logits) = model(b_input_ids, 
-                               token_type_ids=None, 
-                               attention_mask=b_input_mask,
-                               labels=b_labels)
-        
-            total_eval_loss += loss.item()
-            logits = logits.detach().cpu().numpy()
-            label_ids = b_labels.to('cpu').numpy()
-            pred += list(np.argmax(logits, axis=1))
-            seikail += list(label_ids)
-    print(collections.Counter(pred))
-    print("macro")
-    print(f1_score(seikail, pred, average='macro'))
-    print("micro")
-    print(f1_score(seikail, pred, average='micro'))
-    print("accuracy")
-    print(accuracy_score(seikail, pred))
+            with torch.no_grad():
+                outputs = model(b_input_ids,
+                                 token_type_ids=None,
+                                 attention_mask=b_input_mask,
+                                 labels=b_labels)
+                loss = outputs["loss"]
+                logits = outputs["logits"]
+                total_eval_loss += loss.item()
+                logits = logits.detach().cpu().numpy()
+                label_ids = b_labels.to('cpu').numpy()
+                pred += list(np.argmax(logits, axis=1))
+                seikail += list(label_ids)
+        print(collections.Counter(pred))
+        print("macro")
+        print(f1_score(seikail, pred, average='macro'))
+        print("micro")
+        print(f1_score(seikail, pred, average='micro'))
+        print("accuracy")
+        print(accuracy_score(seikail, pred))
 
 def flat_accuracy(preds, labels):
     pred_flat = np.argmax(preds, axis=1).flatten()

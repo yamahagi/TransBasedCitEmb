@@ -46,7 +46,7 @@ def parse_args():
     parser.add_argument('--beta', type=float, default=0.999, help="beta_2 of adam")
     parser.add_argument('--weight_decay', type=float, default=0.01, help="weight decay")
     parser.add_argument('--warm_up', type=float, default=0.1, help="warmup proportion or steps")
-    parser.add_argument('--epoch', type=int, default=15, help="number of epochs")
+    parser.add_argument('--epoch', type=int, default=20, help="number of epochs")
     parser.add_argument('--grad_accumulation', type=int, default=1, help="gradient accumulation")
     parser.add_argument('--gpu', type=str, default='all', help="run script on which devices")
     parser.add_argument('--debug', action='store_true', help="do not log")
