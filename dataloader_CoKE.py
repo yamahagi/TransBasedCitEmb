@@ -198,6 +198,7 @@ def load_PeerRead_graph_data(path,frequency,MAX_LEN):
             wtest.writerow([target_id,left_citated_text,right_citated_text,source_id])
         ftest_fre.close()
         entitylist = list(set(list(dftrain["source_id"].values) + list(dftrain["target_id"].values) + list(dftest["source_id"].values) + list(dftest["target_id"].values)))
+        entitylist.sort()
         entvocab = {"UNKNOWN":0,"MASK":1}
         for i,entity in enumerate(entitylist):
             entvocab[entity] = i+2
@@ -254,6 +255,7 @@ def load_AASC_graph_data(path,frequency,MAX_LEN):
             wtest.writerow([target_id,left_citated_text,right_citated_text,source_id])
         ftest_fre.close()
         entitylist = list(set(list(dftrain["source_id"].values) + list(dftrain["target_id"].values) + list(dftest["source_id"].values) + list(dftest["target_id"].values)))
+        entitylist.sort()
         entvocab = {"UNKNOWN":0,"MASK":1}
         for i,entity in enumerate(entitylist):
             entvocab[entity] = i+2

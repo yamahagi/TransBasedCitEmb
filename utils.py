@@ -60,6 +60,7 @@ def build_ent_vocab(path,dataset="AASC"):
     else:
         df = pd.read_csv(path)
     entitylist = list(set(list(df["source_id"].values)+list(df["target_id"].values)))
+    entitylist.sort()
     for i,entity in enumerate(entitylist):
         ent_vocab[entity] = i+2
     return ent_vocab

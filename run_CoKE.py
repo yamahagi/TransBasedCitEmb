@@ -76,14 +76,13 @@ def main():
         train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir,args.frequency,args.MAX_LEN)
     else:
         train_set, test_set, ent_vocab = load_PeerRead_graph_data(args.data_dir,args.frequency,args.MAX_LEN)
-   
+        train_set, test_set, ent_vocab1 = load_PeerRead_graph_data(args.data_dir,args.frequency,args.MAX_LEN)
     num_ent = len(ent_vocab)
     if args.pretrained_model == "scibert":
         model = PTBCNCOKE.from_pretrained('/home/ohagi_masaya/TransBasedCitEmb/pretrainedmodel/scibert_scivocab_uncased',num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN)
     else:
         model = PTBCNCOKE.from_pretrained('bert-base-uncased',num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN)
     model.change_type_embeddings()
-    print('parameters of SciBERT has been loaded.')
     #fine-tune
     # fine-tune
     no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight', 'layer_norm.bias', 'layer_norm.weight']
@@ -97,6 +96,7 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     devices = list(range(torch.cuda.device_count()))
+    devices = devices[:2]
 
     gradient_clip_callback = GradientClipCallback(clip_value=1, clip_type='norm')
     warmup_callback = WarmupCallback(warmup=args.warm_up, schedule='linear')
@@ -137,10 +137,28 @@ def main():
                 print("found")
                 print(pretrained_model_path)
                 model.load_state_dict(torch.load(pretrained_model_path))
+                model.train()
                 optimizer.load_state_dict(torch.load(pretrained_optimizer_path))
+                train_data_iter = TorchLoaderIter(dataset=train_set,
+                                                  batch_size=bsz,
+                                                  sampler=RandomSampler(),
+                                                  num_workers=os.cpu_count()//2,
+                                                  collate_fn=train_set.collate_fn)
+                trainer = Trainer(train_data=train_data_iter,
+                                  model=model,
+                                  optimizer=optimizer,
+                                  loss=LossInForward(),
+                                  batch_size=bsz,
+                                  update_every=args.grad_accumulation,
+                                  n_epochs=1,
+                                  metrics=None,
+                                  callbacks=[gradient_clip_callback, warmup_callback],
+                                  device=devices,
+                                  save_path=args.model_path,
+                                  use_tqdm=True)
                 for j in range(1,i+1):
                     trainer.train(load_best_model=False)
-                    if args.epoch-i+j % 25 == 0:
+                    if (args.epoch-i+j) % 20 == 0:
                         model_name = "model_"+"epoch"+str(args.epoch-i+j)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
                         optimizer_name = "optimizer_"+"epoch"+str(args.epoch-i+j)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
                         torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
@@ -149,15 +167,17 @@ def main():
         else:
             for i in range(1,args.epoch+1):
                 trainer.train(load_best_model=False)
-                if i%25 == 0:
+                if i%20 == 0:
                     model_name = "model_"+"epoch"+str(i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
                     optimizer_name = "optimizer_"+"epoch"+str(i)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_eachMASK.bin"
                     torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
                     torch.save(optimizer.state_dict(), os.path.join(args.model_path,optimizer_name))
-    print("train end")
+    fw = open("afterloadedSciBERT.txt","w")
+    for param in model.parameters():
+        fw.write(str(param)+"\n")
     #test
-    testloader = torch.utils.data.DataLoader(test_set,batch_size=args.batch_size,shuffle=False,num_workers=os.cpu_count()//2)
-    test_data_iter = TorchLoaderIter(dataset=test_set, batch_size=args.batch_size, sampler=None,num_workers=os.cpu_count()//2,collate_fn=test_set.collate_fn)
+    testloader = torch.utils.data.DataLoader(test_set,batch_size=512,shuffle=False,num_workers=os.cpu_count()//2)
+    test_data_iter = TorchLoaderIter(dataset=test_set, batch_size=512, sampler=None,num_workers=os.cpu_count()//2,collate_fn=test_set.collate_fn)
     mrr_all = 0
     Recallat5_all = 0
     Recallat10_all = 0
@@ -173,7 +193,7 @@ def main():
         model.eval()
         fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(args.epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_eachMASK.txt","w")
         with torch.no_grad():
-            for (inputs,labels) in test_data_iter:
+            for i,(inputs,labels) in enumerate(test_data_iter):
                 outputs = model(target_ids=inputs["target_ids"].cuda(),source_ids=inputs["source_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),attention_masks=inputs["attention_masks"].cuda(),mask_positions=inputs["mask_positions"].cuda(),contexts=inputs["contexts"].cuda())
                 masked_lm_labels = [[-1,-1,source_id] for source_id in np.array(inputs["source_ids"].cpu())]
                 MAP,mrr,Recallat5,Recallat10,Recallat30,Recallat50,l = Evaluation(outputs["entity_logits"],masked_lm_labels)
@@ -212,6 +232,7 @@ def main():
         print(Recallat50_all/l_all)
         print("MAP")
         print(MAP_all/l_all)
+    """
     if args.node_classification and args.dataset == "AASC": 
         fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(args.epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_nodeclassification_eachMASK.txt","w")
         X_train,y_train,X_test,y_test = load_data_SVM(model,ent_vocab)
@@ -273,6 +294,7 @@ def main():
                 print("マクロ平均＝", f1_score(y_test, test_label,average="macro"))
                 print("ミクロ平均＝", f1_score(y_test, test_label,average="micro"))
                 print(collections.Counter(test_label))
+        """
 
 
 if __name__ == '__main__':
