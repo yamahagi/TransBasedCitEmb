@@ -5,19 +5,19 @@ from torch.nn import CrossEntropyLoss
 from transformers import BertForMaskedLM, BertConfig
 import math
 import numpy as np
+"""
 from longformer.longformer import Longformer, LongformerConfig
 from longformer.sliding_chunks import pad_to_window_size
 from transformers import RobertaTokenizer
-
+"""
 class PTBCN(BertForMaskedLM):
     config_class = BertConfig
     base_model_prefix = "bert"
     def __init__(self, config, num_ent, MAX_LEN):
         super().__init__(config)
         self.ent_lm_head = EntLMHead(config,num_ent)
-        self.ent_embeddings = nn.Embedding(num_ent, 768, padding_idx=0)
+        self.ent_embeddings = nn.Embedding(num_ent, 768)
         self.MAX_LEN = MAX_LEN
-        #self.apply(self._init_weights)
 
     def change_type_embeddings(self):
         self.config.type_vocab_size = 2
@@ -131,7 +131,7 @@ class PTBCNCOKE(BertForMaskedLM):
     def __init__(self, config, num_ent, MAX_LEN):
         super().__init__(config)
         self.ent_lm_head = EntLMHead(config,num_ent)
-        self.ent_embeddings = nn.Embedding(num_ent, 768, padding_idx=0)
+        self.ent_embeddings = nn.Embedding(num_ent, 768)
         self.MAX_LEN = MAX_LEN
         #self.apply(self._init_weights)
 

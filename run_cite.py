@@ -22,6 +22,7 @@ import collections
 from tqdm import tqdm
 import random
 import pickle
+from collections import OrderedDict
 
 from sklearn import svm
 from sklearn.metrics import accuracy_score,f1_score
@@ -203,7 +204,7 @@ def get_embeddings(model,ent_vocab,epoch):
 def collate_fn(batch):
     input_keys = ['input_ids','masked_lm_labels',"position_ids","token_type_ids","n_word_nodes","attention_mask"]
     target_keys = ["masked_lm_labels","word_seq_len"]
-    max_words = self.MAX_LEN
+    max_words = 256
     batch_x = {n: [] for n in input_keys}
     batch_y = {n: [] for n in target_keys}
 
@@ -217,7 +218,7 @@ def collate_fn(batch):
             batch_x["masked_lm_labels"].append(sample["masked_lm_labels"]+[-1]*word_pad)
             adj = torch.ones(len(sample['input_ids']), len(sample['input_ids']), dtype=torch.int)
             adj = torch.cat((adj,torch.ones(word_pad,adj.shape[1],dtype=torch.int)),dim=0)
-            adj = torch.cat((adj,torch.zeros(self.MAX_LEN,word_pad,dtype=torch.int)),dim=1)
+            adj = torch.cat((adj,torch.zeros(max_words,word_pad,dtype=torch.int)),dim=1)
             #attention_maskは普通に文章内に対して1で文章外に対して0でいい
             batch_x['attention_mask'].append(adj)
             batch_y["masked_lm_labels"].append(sample["masked_lm_labels"]+[-1]*word_pad)
@@ -261,6 +262,7 @@ def main():
     else:
         model = PTBCN.from_pretrained('bert-base-uncased',num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN)
     model.change_type_embeddings()
+    model.cuda()
     print('parameters of SciBERT has been loaded.')
 
     # fine-tune
@@ -283,12 +285,23 @@ def main():
         train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir,args.frequency,args.WINDOW_SIZE,args.MAX_LEN,args.pretrained_model)
         #train iter
         train_dataloader = torch.utils.data.DataLoader(train_set, batch_size = args.batch_size, shuffle = True, num_workers = 2, collate_fn=collate_fn)
-        for (inputs,labels) in train_dataloader:
+        print("epoch: "+str(epoch))
+        with tqdm(train_dataloader) as pbar:
+            for i,(inputs,labels) in enumerate(pbar):
+                optimizer.zero_grad()
+                outputs = model(input_ids=inputs["input_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),masked_lm_labels=inputs["masked_lm_labels"].cuda(),attention_mask=inputs["attention_mask"].cuda())
+                loss = outputs["loss"]
+                loss.backward()
+                optimizer.step()
+                pbar.set_postfix(OrderedDict(loss=loss.detach().cpu().numpy()))
+        """
+        for (inputs,labels) in tqdm(train_dataloader):
             optimizer.zero_grad()
             outputs = model(input_ids=inputs["input_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),masked_lm_labels=inputs["masked_lm_labels"].cuda(),attention_mask=inputs["attention_mask"].cuda())
             loss = outputs["loss"]
             loss.backward()
             optimizer.step()
+        """
         if epoch % 5 == 0:
             #train iter
             predict(args,epoch,model,ent_vocab,test_set)
