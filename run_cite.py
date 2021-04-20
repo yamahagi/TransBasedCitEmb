@@ -304,13 +304,13 @@ def main():
         """
         if epoch % 5 == 0:
             #train iter
-            predict(args,epoch,model,ent_vocab,test_set)
-            node_classification(args,epoch,model,ent_vocab)
-            intent_identification(args,epoch,model,ent_vocab) 
+            #predict(args,epoch,model,ent_vocab,test_set)
+            #node_classification(args,epoch,model,ent_vocab)
+            #intent_identification(args,epoch,model,ent_vocab) 
             #save model
             model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_randomMASK.bin"
             torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
-            get_embeddings(model,ent_vocab,epoch)
+            #get_embeddings(model,ent_vocab,epoch)
     print("train end")
 
 if __name__ == '__main__':

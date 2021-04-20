@@ -115,8 +115,7 @@ class PeerReadDataSet(Dataset):
             batch_y[k] = torch.tensor(v)
         return (batch_x, batch_y)
 
-
-class AASCDataSet(Dataset):
+class AASCDataSetRANDOM(Dataset):
     def __init__(self, path, ent_vocab,WINDOW_SIZE,MAX_LEN,pretrained_model,mode="train"):
         self.path = path
         self.dirname = os.path.dirname(path)
@@ -241,6 +240,97 @@ class AASCDataSet(Dataset):
                         "left_citation_tokenized":left_citation_tokenized,
                         "right_citation_tokenized":right_citation_tokenized
                     })
+            fids = open(jsonpath,"w")
+            json.dump(dic_json,fids)
+
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, item):
+        return self.data[item]
+
+class AASCDataSet(Dataset):
+    def __init__(self, path, ent_vocab,WINDOW_SIZE,MAX_LEN,pretrained_model,mode="train"):
+        self.path = path
+        self.dirname = os.path.dirname(path)
+        self.filename = os.path.basename(path)
+        self.MAX_LEN = MAX_LEN
+        self.data = []
+        if pretrained_model == "scibert":
+            self.tokenizer =  BertTokenizer.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
+        else:
+            self.tokenizer =  BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case =False)
+        jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(WINDOW_SIZE)+"_MAXLEN"+str(MAX_LEN)+"_pretrainedmodel"+str(pretrained_model)+"_TBCN.json")
+        if os.path.exists(jsonpath):
+            fids = open(jsonpath)
+            dic_json = json.load(fids)
+            for dic1 in dic_json:
+                target_id = dic1["target_id"]
+                source_id = dic1["source_id"]
+                left_citation_tokenized = dic1["left_citation_tokenized"]
+                right_citation_tokenized = dic1["right_citation_tokenized"]
+                citationcontextl = []
+                masked_ids = []
+                position_ids = []
+                token_type_ids = []
+                citationcontextl.append(self.tokenizer.cls_token_id)
+                citationcontextl.append(ent_vocab[target_id])
+                citationcontextl.append(self.tokenizer.sep_token_id)
+                masked_ids.extend([-1,-1,-1])
+                position_ids.extend([0,1,2])
+                token_type_ids.extend([0,1,0])
+                citationcontextl.extend(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab["MASK"]] + right_citation_tokenized[:WINDOW_SIZE])
+                position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
+                masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [ent_vocab[source_id]] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
+                token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
+                self.data.append({
+                    'input_ids': citationcontextl[:MAX_LEN],
+                    'masked_lm_labels' : masked_ids[:MAX_LEN],
+                    'position_ids': position_ids[:MAX_LEN],
+                    'token_type_ids': token_type_ids[:MAX_LEN],
+                })
+        else:
+            df = pd.read_csv(path,quotechar="'")
+            target_ids = df["target_id"]
+            source_ids = df["source_id"]
+            left_citation_texts = df["left_citated_text"]
+            right_citation_texts = df["right_citated_text"]
+            citationcontextl = []
+            masked_ids = []
+            position_ids = []
+            dic_json = []
+            for i,(target_id,source_id,left_citation_text,right_citation_text) in enumerate(zip(target_ids,source_ids,left_citation_texts,right_citation_texts)):
+                if i % 1000 == 0:
+                    print(i)
+                citationcontextl = []
+                masked_ids = []
+                position_ids = []
+                token_type_ids = []
+                citationcontextl.append(self.tokenizer.cls_token_id)
+                citationcontextl.append(ent_vocab[target_id])
+                citationcontextl.append(self.tokenizer.sep_token_id)
+                masked_ids.extend([-1,-1,-1])
+                position_ids.extend([0,1,2])
+                token_type_ids.extend([0,1,0])
+                left_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(left_citation_text))
+                right_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(right_citation_text))
+                citationcontextl.extend(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab["MASK"]] + right_citation_tokenized[:WINDOW_SIZE])
+                position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
+                masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [ent_vocab[source_id]] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
+                token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
+                self.data.append({
+                    'input_ids': citationcontextl[:MAX_LEN],
+                    'masked_lm_labels' : masked_ids[:MAX_LEN],
+                    'position_ids': position_ids[:MAX_LEN],
+                    'token_type_ids': token_type_ids[:MAX_LEN],
+                })
+                dic_json.append({
+                    "target_id":target_id,
+                    "source_id":source_id,
+                    "left_citation_tokenized":left_citation_tokenized,
+                    "right_citation_tokenized":right_citation_tokenized
+                })
             fids = open(jsonpath,"w")
             json.dump(dic_json,fids)
 
@@ -526,10 +616,11 @@ def load_AASC_graph_data(path,frequency,WINDOW_SIZE,MAX_LEN,pretrained_model):
     path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,frequency)
     #randomでMASKするように一旦変更
     dataset_train = AASCDataSet(path_train,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
+    dataset_train_frequency5 = AASCDataSet(path_train_frequency5,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model)
     dataset_test = AASCDataSet(path_test,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model,mode="test")
     dataset_test_frequency5 = AASCDataSet(path_test_frequency5,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model,mode="test")
     print("----loading data done----")
-    return dataset_train,dataset_test_frequency5,entvocab
+    return dataset_train_frequency5,dataset_test_frequency5,entvocab
 
 #AASCのnode classificationデータを読み込む^
 def load_data_SVM(model,entvocab):
