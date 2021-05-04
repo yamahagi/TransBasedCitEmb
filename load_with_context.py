@@ -172,6 +172,7 @@ def load_data_SVM_with_context(model,ent_vocab):
     X_test = get_embeddings(model,X_test)
     return X_train,y_train,X_test,y_test
 
+
 def build_ent_vocab(path,dataset="AASC"):
     ent_vocab = {"UNKNOWN":0,"MASK":1}
     if dataset == "AASC":

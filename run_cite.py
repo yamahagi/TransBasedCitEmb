@@ -15,7 +15,7 @@ from model import PTBCN
 from metrics import MacroMetric
 from metrics import Evaluation
 from utils import build_ent_vocab
-from dataloader import load_AASC_graph_data,load_PeerRead_graph_data,load_data_SVM, load_data_intent_identification
+from dataloader import load_AASC_graph_data,load_PeerRead_graph_data,load_data_SVM, load_data_intent_identification, load_data_SVM_from_feedforward
 from load_with_context import load_data_SVM_with_context
 from collections import Counter
 from itertools import product
@@ -118,7 +118,8 @@ def predict(args,epoch,model,ent_vocab,test_set):
 
 def node_classification(args,epoch,model,ent_vocab):
     #fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_nodeclassification_tailMASK.txt","w")
-    X_train,y_train,X_test,y_test = load_data_SVM_with_context(model,ent_vocab)
+    #X_train,y_train,X_test,y_test = load_data_SVM_with_context(model,ent_vocab)
+    X_train,y_train,X_test,y_test = load_data_SVM_from_feedforward(model,ent_vocab)
     print("SVM data load done")
     print("training start")
     print("PCA start")
@@ -139,13 +140,13 @@ def node_classification(args,epoch,model,ent_vocab):
         X_color_x = np.array([X_place[0] for X_place in X_color])
         X_color_y = np.array([X_place[1] for X_place in X_color])
         ax.scatter(X_color_x,X_color_y,c=color)
-    pyplot.savefig("TransBasedCitEmb_sentenced.png") # 保存
+    pyplot.savefig("TransBasedCitEmb_feedforward.png") # 保存
     Cs = [2 , 2**5, 2 **10]
     gammas = [2 ** -9, 2 ** -6, 2** -3,2 ** 3, 2 ** 6, 2 ** 9]
     svs = [svm.SVC(C=C, gamma=gamma).fit(X_train, y_train) for C, gamma in product(Cs, gammas)]
     products = [(C,gamma) for C,gamma in product(Cs,gammas)]
     print("training done")
-    fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_nodeclassification_sentenced2.txt","w")
+    fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_nodeclassification_feedforward.txt","w")
     for sv,product1 in zip(svs,products):
         test_label = sv.predict(X_test)
         fw.write("C:"+str(product1[0])+","+"gamma:"+str(product1[1])+"\n")

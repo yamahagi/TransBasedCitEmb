@@ -633,6 +633,41 @@ def load_data_SVM(model,entvocab):
             y_test.append(taskdict[task])
     return X_train,y_train,X_test,y_test
 
+#AASCのnode classificationデータを読み込む^
+def load_data_SVM_from_feedforward(model,entvocab):
+    taskn = -1
+    taskdict = {}
+    ftrain = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_train.txt")
+    len1 = 0
+    for line in ftrain:
+        len1 += 1
+    ftrain = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_train.txt")
+    taskn = -1
+    X_train = []
+    y_train = []
+    with torch.no_grad():
+        for i,line in enumerate(ftrain):
+            l = line[:-1].split("\t")
+            paper = l[0]
+            task = l[1]
+            if task not in taskdict:
+                taskn += 1
+                taskdict[task] = taskn
+            entity_logits = model.ent_lm_head.decoder.weight[entvocab[paper]]
+            X_train.append(np.array(entity_logits.cpu()))
+            y_train.append(taskdict[task])
+        ftest = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_test.txt")
+        X_test = []
+        y_test = []
+        for line in ftest:
+            l = line[:-1].split("\t")
+            paper = l[0]
+            task = l[1]
+            entity_logits = model.ent_lm_head.decoder.weight[entvocab[paper]]
+            X_test.append(np.array(entity_logits.cpu()))
+            y_test.append(taskdict[task])
+    return X_train,y_train,X_test,y_test
+
 def load_data_intent_identification(model,entvocab):
     intentn = -1
     intentdict = {}
