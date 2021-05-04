@@ -340,50 +340,6 @@ class AASCDataSet(Dataset):
 
     def __getitem__(self, item):
         return self.data[item]
-    """
-    def collate_fn(self, batch):
-        input_keys = ['input_ids','masked_lm_labels',"position_ids","token_type_ids","n_word_nodes","attention_mask"]
-        target_keys = ["masked_lm_labels","word_seq_len"]
-        max_words = self.MAX_LEN
-        batch_x = {n: [] for n in input_keys}
-        batch_y = {n: [] for n in target_keys}
-        
-        for sample in batch:
-            word_pad = max_words - len(sample["input_ids"])
-            if word_pad > 0:
-                batch_x["input_ids"].append(sample["input_ids"]+[-1]*word_pad)
-                batch_x["position_ids"].append(sample["position_ids"]+[0]*word_pad)
-                batch_x["token_type_ids"].append(sample["token_type_ids"]+[0]*word_pad)
-                batch_x["n_word_nodes"].append(max_words)
-                batch_x["masked_lm_labels"].append(sample["masked_lm_labels"]+[-1]*word_pad)
-                adj = torch.ones(len(sample['input_ids']), len(sample['input_ids']), dtype=torch.int)
-                adj = torch.cat((adj,torch.ones(word_pad,adj.shape[1],dtype=torch.int)),dim=0)
-                adj = torch.cat((adj,torch.zeros(self.MAX_LEN,word_pad,dtype=torch.int)),dim=1)
-                #attention_maskは普通に文章内に対して1で文章外に対して0でいい
-                batch_x['attention_mask'].append(adj)
-                batch_y["masked_lm_labels"].append(sample["masked_lm_labels"]+[-1]*word_pad)
-                batch_y["word_seq_len"].append(len(sample["input_ids"]))
-            else:
-                batch_x["input_ids"].append(sample["input_ids"])
-                batch_x["position_ids"].append(sample["position_ids"])
-                batch_x["token_type_ids"].append(sample["token_type_ids"])
-                batch_x["n_word_nodes"].append(max_words)
-                batch_x["masked_lm_labels"].append(sample["masked_lm_labels"])
-                adj = torch.ones(len(sample['input_ids']), len(sample['input_ids']), dtype=torch.int)
-                #attention_maskは普通に文章内に対して1で文章外に対して0でいい
-                batch_x['attention_mask'].append(adj)
-                batch_y["masked_lm_labels"].append(sample["masked_lm_labels"])
-                batch_y["word_seq_len"].append(len(sample["input_ids"]))
-
-        for k, v in batch_x.items():
-            if k == 'attention_mask':
-                batch_x[k] = torch.stack(v, dim=0)
-            else:
-                batch_x[k] = torch.tensor(v)
-        for k, v in batch_y.items():
-            batch_y[k] = torch.tensor(v)
-        return (batch_x, batch_y)
-    """
 
 class AASCDataSet_eachMASK(Dataset):
     def __init__(self, path, ent_vocab,WINDOW_SIZE,MAX_LEN,pretrained_model):
@@ -620,7 +576,7 @@ def load_AASC_graph_data(path,frequency,WINDOW_SIZE,MAX_LEN,pretrained_model):
     dataset_test = AASCDataSet(path_test,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model,mode="test")
     dataset_test_frequency5 = AASCDataSet(path_test_frequency5,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model,mode="test")
     print("----loading data done----")
-    return dataset_train_frequency5,dataset_test_frequency5,entvocab
+    return dataset_train,dataset_test_frequency5,entvocab
 
 #AASCのnode classificationデータを読み込む^
 def load_data_SVM(model,entvocab):

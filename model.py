@@ -258,3 +258,12 @@ class EntLMHead(nn.Module):
         x = self.decoder(x)
 
         return x
+
+class EntLinearLMHead(nn.Module):
+    def __init__(self, config,num_ent):
+        super().__init__()
+        self.decoder = nn.Linear(config.hidden_size, num_ent)
+
+    def forward(self, features, **kwargs):
+        x = self.decoder(x)
+        return x

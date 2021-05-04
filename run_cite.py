@@ -16,6 +16,7 @@ from metrics import MacroMetric
 from metrics import Evaluation
 from utils import build_ent_vocab
 from dataloader import load_AASC_graph_data,load_PeerRead_graph_data,load_data_SVM, load_data_intent_identification
+from load_with_context import load_data_SVM_with_context
 from collections import Counter
 from itertools import product
 import collections
@@ -26,6 +27,8 @@ from collections import OrderedDict
 
 from sklearn import svm
 from sklearn.metrics import accuracy_score,f1_score
+from sklearn.decomposition import PCA
+from matplotlib import pyplot
 
 import pandas as pd
 import csv
@@ -59,8 +62,11 @@ def parse_args():
     return parser.parse_args()
 
 def predict(args,epoch,model,ent_vocab,test_set):
+    """
     testloader = torch.utils.data.DataLoader(test_set,batch_size=args.batch_size,shuffle=False,num_workers=os.cpu_count()//2)
     test_data_iter = TorchLoaderIter(dataset=test_set, batch_size=args.batch_size, sampler=None,num_workers=os.cpu_count()//2,collate_fn=test_set.collate_fn)
+    """
+    test_dataloader = torch.utils.data.DataLoader(test_set, batch_size = 1, shuffle = False, num_workers = 2, collate_fn=collate_fn)
     mrr_all = 0
     Recallat5_all = 0
     Recallat10_all = 0
@@ -69,9 +75,9 @@ def predict(args,epoch,model,ent_vocab,test_set):
     MAP_all = 0
     l_all = 0
     l_prev = 0
-    fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_randomMASK.txt","w")
+    fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_tailMASK.txt","w")
     with torch.no_grad():
-        for (inputs,labels) in test_data_iter:
+        for (inputs,labels) in test_dataloader:
             outputs = model(input_ids=inputs["input_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),masked_lm_labels=inputs["masked_lm_labels"].cuda(),attention_mask=inputs["attention_mask"].cuda())
             MAP,mrr,Recallat5,Recallat10,Recallat30,Recallat50,l = Evaluation(outputs["entity_logits"].cpu(),inputs["masked_lm_labels"])
             mrr_all += mrr
@@ -111,15 +117,35 @@ def predict(args,epoch,model,ent_vocab,test_set):
         print(MAP_all/l_all)
 
 def node_classification(args,epoch,model,ent_vocab):
-    fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_nodeclassification_randomMASK.txt","w")
-    X_train,y_train,X_test,y_test = load_data_SVM(model,ent_vocab)
+    #fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_nodeclassification_tailMASK.txt","w")
+    X_train,y_train,X_test,y_test = load_data_SVM_with_context(model,ent_vocab)
     print("SVM data load done")
     print("training start")
+    print("PCA start")
+    pca = PCA(n_components=2)
+    pca.fit(X_test)
+    X_test_visualization = pca.transform(X_test)
+    print("PCA done: " + str(len(X_test)))
+    print("Y length: " + str(len(y_test)))
+    print("visualization start")
+    fig, ax = pyplot.subplots(figsize=(20,20))
+    X_test_colors = [[] for _ in range(max(y_test)+1)]
+    y_test_colors = [[] for _ in range(max(y_test)+1)]
+    colors_name = ["black","grey","tomato","saddlebrown","palegoldenrod","olivedrab","cyan","steelblue","midnightblue","darkviolet","magenta","pink","yellow"]
+    for x,y in zip(X_test_visualization,y_test):
+        X_test_colors[y].append(x)
+        y_test_colors[y].append(y)
+    for X_color,color in zip(X_test_colors,colors_name):
+        X_color_x = np.array([X_place[0] for X_place in X_color])
+        X_color_y = np.array([X_place[1] for X_place in X_color])
+        ax.scatter(X_color_x,X_color_y,c=color)
+    pyplot.savefig("TransBasedCitEmb_sentenced.png") # 保存
     Cs = [2 , 2**5, 2 **10]
     gammas = [2 ** -9, 2 ** -6, 2** -3,2 ** 3, 2 ** 6, 2 ** 9]
     svs = [svm.SVC(C=C, gamma=gamma).fit(X_train, y_train) for C, gamma in product(Cs, gammas)]
     products = [(C,gamma) for C,gamma in product(Cs,gammas)]
     print("training done")
+    fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_nodeclassification_sentenced2.txt","w")
     for sv,product1 in zip(svs,products):
         test_label = sv.predict(X_test)
         fw.write("C:"+str(product1[0])+","+"gamma:"+str(product1[1])+"\n")
@@ -281,6 +307,7 @@ def main():
     model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+".bin"
     pretrained_model_path = os.path.join(args.model_path,model_name)
     print("train start")
+    """
     for epoch in range(1,args.epoch+1):
         train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir,args.frequency,args.WINDOW_SIZE,args.MAX_LEN,args.pretrained_model)
         #train iter
@@ -294,14 +321,6 @@ def main():
                 loss.backward()
                 optimizer.step()
                 pbar.set_postfix(OrderedDict(loss=loss.detach().cpu().numpy()))
-        """
-        for (inputs,labels) in tqdm(train_dataloader):
-            optimizer.zero_grad()
-            outputs = model(input_ids=inputs["input_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),masked_lm_labels=inputs["masked_lm_labels"].cuda(),attention_mask=inputs["attention_mask"].cuda())
-            loss = outputs["loss"]
-            loss.backward()
-            optimizer.step()
-        """
         if epoch % 5 == 0:
             #train iter
             #predict(args,epoch,model,ent_vocab,test_set)
@@ -311,7 +330,16 @@ def main():
             model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_randomMASK.bin"
             torch.save(model.state_dict(),os.path.join(args.model_path,model_name))
             #get_embeddings(model,ent_vocab,epoch)
+    """
     print("train end")
+    for i in range(1,2):
+        epoch = i*5
+        model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_randomMASK.bin"
+        model.load_state_dict(torch.load(os.path.join(args.model_path,model_name)))
+        model.eval()
+        #predict(args,epoch,model,ent_vocab,test_set)
+        node_classification(args,epoch,model,ent_vocab)
+
 
 if __name__ == '__main__':
     main()
