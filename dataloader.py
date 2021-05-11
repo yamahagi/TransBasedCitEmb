@@ -13,6 +13,42 @@ import random
 WORD_PADDING_INDEX = 1
 ENTITY_PADDING_INDEX = 1
 
+#make masked paper prediction data
+def make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,tokenizer,ent_vocab,mask_position):
+    #mask cited paper(source_id)
+    target_id = dic_data["target_id"]
+    source_id = dic_data["source_id"]
+    left_citation_tokenized = dic_data["left_citation_tokenized"]
+    right_citation_tokenized = dic_data["right_citation_tokenized"]
+    citationcontextl = []
+    masked_ids = []
+    position_ids = []
+    token_type_ids = []
+    if mask_position == "cited":
+        #append citing id
+        citationcontextl.extend([tokenizer.cls_token_id,ent_vocab[target_id],tokenizer.sep_token_id])
+        masked_ids.extend([-1,-1,-1])
+        position_ids.extend([0,1,2])
+        token_type_ids.extend([0,1,0])
+        #append citation context
+        citationcontextl.extend(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab["MASK"]] + right_citation_tokenized[:WINDOW_SIZE])
+        position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
+        masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [ent_vocab[source_id]] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
+        token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
+    else:
+        #append citing id
+        citationcontextl.append([self.tokenizer.cls_token_id,ent_vocab["MASK"],self.tokenizer.sep_token_id])
+        masked_ids.extend([-1,ent_vocab[target_id],-1])
+        position_ids.extend([0,1,2])
+        token_type_ids.extend([0,1,0])
+        #append citation context
+        citationcontextl.extend(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE])
+        position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
+        masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [-1] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
+        token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
+    data = {'input_ids': citationcontextl[:MAX_LEN],'masked_lm_labels' : masked_ids[:MAX_LEN],'position_ids': position_ids[:MAX_LEN],'token_type_ids': token_type_ids[:MAX_LEN],}
+    return data
+
 class PeerReadDataSet(Dataset):
     def __init__(self, path, ent_vocab, WINDOW_SIZE, MAX_LEN,pretrained_model):
         self.path = path
@@ -28,221 +64,28 @@ class PeerReadDataSet(Dataset):
         jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(WINDOW_SIZE)+"_MAXLEN"+str(MAX_LEN)+"_pretrainedmodel"+str(pretrained_model)+".json")
         if os.path.exists(jsonpath):
             fids = open(jsonpath)
-            dl = json.load(fids)
-            self.data = dl
-        else:
-            target_ids = df["target_id"]
-            source_ids = df["source_id"]
-            left_citation_texts = df["left_citated_text"]
-            right_citation_texts = df["right_citated_text"]
-            citationcontextl = []
-            masked_ids = []
-            position_ids = []
-            for i,(target_id,source_id,left_citation_text,right_citation_text) in enumerate(zip(target_ids,source_ids,left_citation_texts,right_citation_texts)):
-                if i % 1000 == 0:
-                    print(i)
-                citationcontextl = []
-                masked_ids = []
-                position_ids = []
-                token_type_ids = []
-                citationcontextl.append(self.tokenizer.cls_token_id)
-                citationcontextl.append(ent_vocab[target_id])
-                citationcontextl.append(self.tokenizer.sep_token_id)
-                masked_ids.extend([-1,-1,-1])
-                position_ids.extend([0,1,2])
-                token_type_ids.extend([0,1,0])
-                left_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(left_citation_text))
-                right_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(right_citation_text))
-                citationcontextl.extend(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab["MASK"]] + right_citation_tokenized[:WINDOW_SIZE])
-                position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
-                masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [ent_vocab[source_id]] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
-                token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
-                self.data.append({
-                    'input_ids': citationcontextl[:MAX_LEN],
-                    'masked_lm_labels' : masked_ids[:MAX_LEN],
-                    'position_ids': position_ids[:MAX_LEN],
-                    'token_type_ids': token_type_ids[:MAX_LEN],
-                })
-            fids = open(jsonpath,"w")
-            json.dump(self.data,fids)
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, item):
-        return self.data[item]
-
-    def collate_fn(self, batch):
-        input_keys = ['input_ids','masked_lm_labels',"position_ids","token_type_ids","n_word_nodes","attention_mask"]
-        target_keys = ["masked_lm_labels","word_seq_len"]
-        max_words = self.MAX_LEN
-        batch_x = {n: [] for n in input_keys}
-        batch_y = {n: [] for n in target_keys}
-        
-        for sample in batch:
-            word_pad = max_words - len(sample["input_ids"])
-            if word_pad > 0:
-                batch_x["input_ids"].append(sample["input_ids"]+[-1]*word_pad)
-                batch_x["position_ids"].append(sample["position_ids"]+[0]*word_pad)
-                batch_x["token_type_ids"].append(sample["token_type_ids"]+[0]*word_pad)
-                batch_x["n_word_nodes"].append(max_words)
-                batch_x["masked_lm_labels"].append(sample["masked_lm_labels"]+[-1]*word_pad)
-                adj = torch.ones(len(sample['input_ids']), len(sample['input_ids']), dtype=torch.int)
-                adj = torch.cat((adj,torch.ones(word_pad,adj.shape[1],dtype=torch.int)),dim=0)
-                adj = torch.cat((adj,torch.zeros(self.MAX_LEN,word_pad,dtype=torch.int)),dim=1)
-                #attention_maskは普通に文章内に対して1で文章外に対して0でいい
-                batch_x['attention_mask'].append(adj)
-                batch_y["masked_lm_labels"].append(sample["masked_lm_labels"]+[-1]*word_pad)
-                batch_y["word_seq_len"].append(len(sample["input_ids"]))
-            else:
-                batch_x["input_ids"].append(sample["input_ids"])
-                batch_x["position_ids"].append(sample["position_ids"])
-                batch_x["token_type_ids"].append(sample["token_type_ids"])
-                batch_x["n_word_nodes"].append(max_words)
-                batch_x["masked_lm_labels"].append(sample["masked_lm_labels"])
-                adj = torch.ones(len(sample['input_ids']), len(sample['input_ids']), dtype=torch.int)
-                #attention_maskは普通に文章内に対して1で文章外に対して0でいい
-                batch_x['attention_mask'].append(adj)
-                batch_y["masked_lm_labels"].append(sample["masked_lm_labels"])
-                batch_y["word_seq_len"].append(len(sample["input_ids"]))
-
-        for k, v in batch_x.items():
-            if k == 'attention_mask':
-                batch_x[k] = torch.stack(v, dim=0)
-            else:
-                batch_x[k] = torch.tensor(v)
-        for k, v in batch_y.items():
-            batch_y[k] = torch.tensor(v)
-        return (batch_x, batch_y)
-
-class AASCDataSetRANDOM(Dataset):
-    def __init__(self, path, ent_vocab,WINDOW_SIZE,MAX_LEN,pretrained_model,mode="train"):
-        self.path = path
-        self.dirname = os.path.dirname(path)
-        self.filename = os.path.basename(path)
-        self.MAX_LEN = MAX_LEN
-        self.data = []
-        if pretrained_model == "scibert":
-            self.tokenizer =  BertTokenizer.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
-        else:
-            self.tokenizer =  BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case =False)
-        jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(WINDOW_SIZE)+"_MAXLEN"+str(MAX_LEN)+"_pretrainedmodel"+str(pretrained_model)+"_TBCN.json")
-        if os.path.exists(jsonpath):
-            fids = open(jsonpath)
             dic_json = json.load(fids)
-            for dic1 in dic_json:
-                target_id = dic1["target_id"]
-                source_id = dic1["source_id"]
-                left_citation_tokenized = dic1["left_citation_tokenized"]
-                right_citation_tokenized = dic1["right_citation_tokenized"]
-                citationcontextl = []
-                masked_ids = []
-                position_ids = []
-                token_type_ids = []
-                if random.random() < 0.5 or mode == "test":
-                    citationcontextl.append(self.tokenizer.cls_token_id)
-                    citationcontextl.append(ent_vocab[target_id])
-                    citationcontextl.append(self.tokenizer.sep_token_id)
-                    masked_ids.extend([-1,-1,-1])
-                    position_ids.extend([0,1,2])
-                    token_type_ids.extend([0,1,0])
-                    citationcontextl.extend(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab["MASK"]] + right_citation_tokenized[:WINDOW_SIZE])
-                    position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
-                    masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [ent_vocab[source_id]] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
-                    token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
-                    self.data.append({
-                        'input_ids': citationcontextl[:MAX_LEN],
-                        'masked_lm_labels' : masked_ids[:MAX_LEN],
-                        'position_ids': position_ids[:MAX_LEN],
-                        'token_type_ids': token_type_ids[:MAX_LEN],
-                    })
-                else:
-                    citationcontextl.append(self.tokenizer.cls_token_id)
-                    citationcontextl.append(ent_vocab["MASK"])
-                    citationcontextl.append(self.tokenizer.sep_token_id)
-                    masked_ids.extend([-1,ent_vocab[target_id],-1])
-                    position_ids.extend([0,1,2])
-                    token_type_ids.extend([0,1,0])
-                    citationcontextl.extend(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE])
-                    position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
-                    masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [-1] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
-                    token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
-                    self.data.append({
-                        'input_ids': citationcontextl[:MAX_LEN],
-                        'masked_lm_labels' : masked_ids[:MAX_LEN],
-                        'position_ids': position_ids[:MAX_LEN],
-                        'token_type_ids': token_type_ids[:MAX_LEN],
-                    })
+            for dic_data in dic_json:
+                data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
+                self.data.append(data)
         else:
             df = pd.read_csv(path,quotechar="'")
             target_ids = df["target_id"]
             source_ids = df["source_id"]
             left_citation_texts = df["left_citated_text"]
             right_citation_texts = df["right_citated_text"]
-            citationcontextl = []
-            masked_ids = []
-            position_ids = []
             dic_json = []
             for i,(target_id,source_id,left_citation_text,right_citation_text) in enumerate(zip(target_ids,source_ids,left_citation_texts,right_citation_texts)):
                 if i % 1000 == 0:
                     print(i)
-                citationcontextl = []
-                masked_ids = []
-                position_ids = []
-                token_type_ids = []
-                if random.random() < 0.5 or mode == "test":
-                    citationcontextl.append(self.tokenizer.cls_token_id)
-                    citationcontextl.append(ent_vocab[target_id])
-                    citationcontextl.append(self.tokenizer.sep_token_id)
-                    masked_ids.extend([-1,-1,-1])
-                    position_ids.extend([0,1,2])
-                    token_type_ids.extend([0,1,0])
-                    left_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(left_citation_text))
-                    right_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(right_citation_text))
-                    citationcontextl.extend(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab["MASK"]] + right_citation_tokenized[:WINDOW_SIZE])
-                    position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
-                    masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [ent_vocab[source_id]] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
-                    token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
-                    self.data.append({
-                        'input_ids': citationcontextl[:MAX_LEN],
-                        'masked_lm_labels' : masked_ids[:MAX_LEN],
-                        'position_ids': position_ids[:MAX_LEN],
-                        'token_type_ids': token_type_ids[:MAX_LEN],
-                    })
-                    dic_json.append({
-                        "target_id":target_id,
-                        "source_id":source_id,
-                        "left_citation_tokenized":left_citation_tokenized,
-                        "right_citation_tokenized":right_citation_tokenized
-                    })
-                else:
-                    citationcontextl.append(self.tokenizer.cls_token_id)
-                    citationcontextl.append(ent_vocab["MASK"])
-                    citationcontextl.append(self.tokenizer.sep_token_id)
-                    masked_ids.extend([-1,ent_vocab[target_id],-1])
-                    position_ids.extend([0,1,2])
-                    token_type_ids.extend([0,1,0])
-                    left_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(left_citation_text))
-                    right_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(right_citation_text))
-                    citationcontextl.extend(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE])
-                    position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
-                    masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [-1] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
-                    token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
-                    self.data.append({
-                        'input_ids': citationcontextl[:MAX_LEN],
-                        'masked_lm_labels' : masked_ids[:MAX_LEN],
-                        'position_ids': position_ids[:MAX_LEN],
-                        'token_type_ids': token_type_ids[:MAX_LEN],
-                    })
-                    dic_json.append({
-                        "target_id":target_id,
-                        "source_id":source_id,
-                        "left_citation_tokenized":left_citation_tokenized,
-                        "right_citation_tokenized":right_citation_tokenized
-                    })
+                left_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(left_citation_text))
+                right_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(right_citation_text))
+                dic_data = {"target_id":target_id,"source_id":source_id,"left_citation_tokenized":left_citation_tokenized,"right_citation_tokenized":right_citation_tokenized}
+                data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
+                self.data.append(data)
+                dic_json.append(dic_data)
             fids = open(jsonpath,"w")
             json.dump(dic_json,fids)
-
 
     def __len__(self):
         return len(self.data)
@@ -265,75 +108,79 @@ class AASCDataSet(Dataset):
         if os.path.exists(jsonpath):
             fids = open(jsonpath)
             dic_json = json.load(fids)
-            for dic1 in dic_json:
-                target_id = dic1["target_id"]
-                source_id = dic1["source_id"]
-                left_citation_tokenized = dic1["left_citation_tokenized"]
-                right_citation_tokenized = dic1["right_citation_tokenized"]
-                citationcontextl = []
-                masked_ids = []
-                position_ids = []
-                token_type_ids = []
-                citationcontextl.append(self.tokenizer.cls_token_id)
-                citationcontextl.append(ent_vocab[target_id])
-                citationcontextl.append(self.tokenizer.sep_token_id)
-                masked_ids.extend([-1,-1,-1])
-                position_ids.extend([0,1,2])
-                token_type_ids.extend([0,1,0])
-                citationcontextl.extend(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab["MASK"]] + right_citation_tokenized[:WINDOW_SIZE])
-                position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
-                masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [ent_vocab[source_id]] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
-                token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
-                self.data.append({
-                    'input_ids': citationcontextl[:MAX_LEN],
-                    'masked_lm_labels' : masked_ids[:MAX_LEN],
-                    'position_ids': position_ids[:MAX_LEN],
-                    'token_type_ids': token_type_ids[:MAX_LEN],
-                })
+            for dic_data in dic_json:
+                data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
+                self.data.append(data)
         else:
             df = pd.read_csv(path,quotechar="'")
             target_ids = df["target_id"]
             source_ids = df["source_id"]
             left_citation_texts = df["left_citated_text"]
             right_citation_texts = df["right_citated_text"]
-            citationcontextl = []
-            masked_ids = []
-            position_ids = []
             dic_json = []
             for i,(target_id,source_id,left_citation_text,right_citation_text) in enumerate(zip(target_ids,source_ids,left_citation_texts,right_citation_texts)):
                 if i % 1000 == 0:
                     print(i)
-                citationcontextl = []
-                masked_ids = []
-                position_ids = []
-                token_type_ids = []
-                citationcontextl.append(self.tokenizer.cls_token_id)
-                citationcontextl.append(ent_vocab[target_id])
-                citationcontextl.append(self.tokenizer.sep_token_id)
-                masked_ids.extend([-1,-1,-1])
-                position_ids.extend([0,1,2])
-                token_type_ids.extend([0,1,0])
                 left_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(left_citation_text))
                 right_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(right_citation_text))
-                citationcontextl.extend(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab["MASK"]] + right_citation_tokenized[:WINDOW_SIZE])
-                position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
-                masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [ent_vocab[source_id]] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
-                token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
-                self.data.append({
-                    'input_ids': citationcontextl[:MAX_LEN],
-                    'masked_lm_labels' : masked_ids[:MAX_LEN],
-                    'position_ids': position_ids[:MAX_LEN],
-                    'token_type_ids': token_type_ids[:MAX_LEN],
-                })
-                dic_json.append({
-                    "target_id":target_id,
-                    "source_id":source_id,
-                    "left_citation_tokenized":left_citation_tokenized,
-                    "right_citation_tokenized":right_citation_tokenized
-                })
+                dic_data = {"target_id":target_id,"source_id":source_id,"left_citation_tokenized":left_citation_tokenized,"right_citation_tokenized":right_citation_tokenized}
+                data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
+                self.data.append(data)
+                dic_json.append(dic_data)
             fids = open(jsonpath,"w")
             json.dump(dic_json,fids)
 
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, item):
+        return self.data[item]
+
+class AASCDataSetRANDOM(Dataset):
+    def __init__(self, path, ent_vocab,WINDOW_SIZE,MAX_LEN,pretrained_model,mode="train"):
+        self.path = path
+        self.dirname = os.path.dirname(path)
+        self.filename = os.path.basename(path)
+        self.MAX_LEN = MAX_LEN
+        self.WINDOW_SIZE = WINDOW_SIZE
+        self.ent_vocab = ent_vocab
+        self.data = []
+        if pretrained_model == "scibert":
+            self.tokenizer =  BertTokenizer.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
+        else:
+            self.tokenizer =  BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case =False)
+        jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(WINDOW_SIZE)+"_MAXLEN"+str(MAX_LEN)+"_pretrainedmodel"+str(pretrained_model)+"_TBCN.json")
+        if os.path.exists(jsonpath):
+            fids = open(jsonpath)
+            dic_json = json.load(fids)
+            for dic_data in dic_json:
+                if random.random() < 0.5 or mode == "test":
+                    data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
+                else:
+                    data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"citing")
+                self.data.append(data)
+        else:
+            df = pd.read_csv(path,quotechar="'")
+            target_ids = df["target_id"]
+            source_ids = df["source_id"]
+            left_citation_texts = df["left_citated_text"]
+            right_citation_texts = df["right_citated_text"]
+            dic_json = []
+            for i,(target_id,source_id,left_citation_text,right_citation_text) in enumerate(zip(target_ids,source_ids,left_citation_texts,right_citation_texts)):
+                if i % 1000 == 0:
+                    print(i)
+                left_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(left_citation_text))
+                right_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(right_citation_text))
+                dic_data = {"target_id":target_id,"source_id":source_id,"left_citation_tokenized":left_citation_tokenized,"right_citation_tokenized":right_citation_tokenized}
+                if random.random() < 0.5 or mode == "test":
+                    data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
+                else:
+                    data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"citing")
+                self.data.append(data)
+                dic_json.append(dic_data)
+            fids = open(jsonpath,"w")
+            json.dump(dic_json,fids)
 
     def __len__(self):
         return len(self.data)
@@ -357,119 +204,36 @@ class AASCDataSet_eachMASK(Dataset):
         jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(WINDOW_SIZE)+"_MAXLEN"+str(MAX_LEN)+"_pretrainedmodel"+str(pretrained_model)+"_TBCN_eachMASK.json")
         if os.path.exists(jsonpath):
             fids = open(jsonpath)
-            dl = json.load(fids)
-            self.data = dl
+            dic_json = json.load(fids)
+            for dic_data in dic_json:
+                data_cited_mask = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
+                data_citing_mask = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"citing")
+                self.data.extend([data_cited_mask,data_citing_mask])
         else:
+            df = pd.read_csv(path,quotechar="'")
             target_ids = df["target_id"]
             source_ids = df["source_id"]
             left_citation_texts = df["left_citated_text"]
             right_citation_texts = df["right_citated_text"]
-            citationcontextl = []
-            masked_ids = []
-            position_ids = []
-            citepositionids = []
+            dic_json = []
             for i,(target_id,source_id,left_citation_text,right_citation_text) in enumerate(zip(target_ids,source_ids,left_citation_texts,right_citation_texts)):
                 if i % 1000 == 0:
                     print(i)
-                #cited id mask version
-                citationcontextl = []
-                masked_ids = []
-                position_ids = []
-                token_type_ids = []
-                citepositionids = []
-                citationcontextl.append(self.tokenizer.cls_token_id)
-                citationcontextl.append(ent_vocab[target_id])
-                citationcontextl.append(self.tokenizer.sep_token_id)
-                masked_ids.extend([-1,-1,-1])
-                position_ids.extend([0,1,2])
-                token_type_ids.extend([0,1,0])
-                citepositionids.append((1,ent_vocab[target_id]))
                 left_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(left_citation_text))
                 right_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(right_citation_text))
-                citationcontextl.extend(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab["MASK"]] + right_citation_tokenized[:WINDOW_SIZE])
-                position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
-                masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [ent_vocab[source_id]] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
-                token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
-                citepositionids.append((3+len(left_citation_tokenized[-WINDOW_SIZE:]),ent_vocab[source_id]))
-                self.data.append({
-                    'input_ids': citationcontextl[:MAX_LEN],
-                    'masked_lm_labels' : masked_ids[:MAX_LEN],
-                    'position_ids': position_ids[:MAX_LEN],
-                    'token_type_ids': token_type_ids[:MAX_LEN],
-                    'cite_position_ids':citepositionids
-                })
-                #citeとcitedのMASKを入れ替える
-                citing_position = citepositionids[0][0]
-                citing_id = citepositionids[0][1]
-                cited_position = citepositionids[1][0]
-                cited_id = citepositionids[1][1]
-                citationcontextl[citing_position] = ent_vocab["MASK"]
-                citationcontextl[cited_position] = cited_id
-                masked_ids[citing_position] = citing_id
-                masked_ids[cited_position] = -1
-                self.data.append({
-                    'input_ids': citationcontextl[:MAX_LEN],
-                    'masked_lm_labels' : masked_ids[:MAX_LEN],
-                    'position_ids': position_ids[:MAX_LEN],
-                    'token_type_ids': token_type_ids[:MAX_LEN],
-                    'cite_position_ids':citepositionids
-                })
+                dic_data = {"target_id":target_id,"source_id":source_id,"left_citation_tokenized":left_citation_tokenized,"right_citation_tokenized":right_citation_tokenized}
+                data_cited_mask = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
+                data_citing_mask = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"citing")
+                self.data.extend([data_cited_mask,data_citing_mask])
+                dic_json.append(dic_data)
             fids = open(jsonpath,"w")
-            json.dump(self.data,fids)
+            json.dump(dic_json,fids)
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, item):
         return self.data[item]
-
-    def collate_fn(self, batch):
-        input_keys = ['input_ids','masked_lm_labels',"position_ids","token_type_ids","n_word_nodes","attention_mask"]
-        target_keys = ["masked_lm_labels","word_seq_len"]
-        max_words = self.MAX_LEN
-        batch_x = {n: [] for n in input_keys}
-        batch_y = {n: [] for n in target_keys}
-        
-        for sample in batch:
-            word_pad = max_words - len(sample["input_ids"])
-            input_ids = sample["input_ids"]
-            position_ids = sample["position_ids"]
-            token_type_ids = sample["token_type_ids"]
-            n_word_nodes = max_words
-            masked_lm_labels = sample["masked_lm_labels"]
-            if word_pad > 0:
-                batch_x["input_ids"].append(input_ids+[-1]*word_pad)
-                batch_x["position_ids"].append(position_ids+[0]*word_pad)
-                batch_x["token_type_ids"].append(token_type_ids+[0]*word_pad)
-                batch_x["n_word_nodes"].append(max_words)
-                batch_x["masked_lm_labels"].append(masked_lm_labels+[-1]*word_pad)
-                adj = torch.ones(len(input_ids), len(input_ids), dtype=torch.int)
-                adj = torch.cat((adj,torch.ones(word_pad,adj.shape[1],dtype=torch.int)),dim=0)
-                adj = torch.cat((adj,torch.zeros(self.MAX_LEN,word_pad,dtype=torch.int)),dim=1)
-                #attention_maskは普通に文章内に対して1で文章外に対して0でいい
-                batch_x['attention_mask'].append(adj)
-                batch_y["masked_lm_labels"].append(masked_lm_labels+[-1]*word_pad)
-                batch_y["word_seq_len"].append(len(input_ids))
-            else:
-                batch_x["input_ids"].append(input_ids)
-                batch_x["position_ids"].append(position_ids)
-                batch_x["token_type_ids"].append(token_type_ids)
-                batch_x["n_word_nodes"].append(max_words)
-                batch_x["masked_lm_labels"].append(masked_lm_labels)
-                adj = torch.ones(len(input_ids), len(input_ids), dtype=torch.int)
-                #attention_maskは普通に文章内に対して1で文章外に対して0でいい
-                batch_x['attention_mask'].append(adj)
-                batch_y["masked_lm_labels"].append(masked_lm_labels)
-                batch_y["word_seq_len"].append(len(input_ids))
-
-        for k, v in batch_x.items():
-            if k == 'attention_mask':
-                batch_x[k] = torch.stack(v, dim=0)
-            else:
-                batch_x[k] = torch.tensor(v)
-        for k, v in batch_y.items():
-            batch_y[k] = torch.tensor(v)
-        return (batch_x, batch_y)
 
 #入力: directory
 def load_PeerRead_graph_data(path,frequency,WINDOW_SIZE,MAX_LEN,pretrained_model):
@@ -633,7 +397,7 @@ def load_data_SVM(model,entvocab):
             y_test.append(taskdict[task])
     return X_train,y_train,X_test,y_test
 
-#AASCのnode classificationデータを読み込む^
+#AASCのnode classificationデータを読み込む
 def load_data_SVM_from_feedforward(model,entvocab):
     taskn = -1
     taskdict = {}

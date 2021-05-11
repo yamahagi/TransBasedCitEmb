@@ -5,11 +5,7 @@ from torch.nn import CrossEntropyLoss
 from transformers import BertForMaskedLM, BertConfig
 import math
 import numpy as np
-"""
-from longformer.longformer import Longformer, LongformerConfig
-from longformer.sliding_chunks import pad_to_window_size
-from transformers import RobertaTokenizer
-"""
+
 class PTBCN(BertForMaskedLM):
     config_class = BertConfig
     base_model_prefix = "bert"
@@ -66,65 +62,6 @@ class PTBCN(BertForMaskedLM):
                 'entity_pred': ent_predict,
                 'entity_logits': ent_logits,
                 'sequence_output': sequence_output}
-"""
-class PTBCNLONG(Longformer):
-    config_class = LongformerConfig.from_pretrained('longformer-base-4096/')
-    base_model_prefix = "longformer"
-    def __init__(self, config, num_ent, MAX_LEN):
-        super().__init__(config)
-        self.ent_lm_head = EntLMHead(config,num_ent)
-        self.ent_embeddings = nn.Embedding(num_ent, 768, padding_idx=0)
-        self.MAX_LEN = MAX_LEN
-        #self.apply(self._init_weights)
-
-    def change_type_embeddings(self):
-        self.config.type_vocab_size = 2
-        single_emb = self.bert.embeddings.token_type_embeddings
-        self.bert.embeddings.token_type_embeddings = nn.Embedding(2, self.config.hidden_size)
-        self.bert.embeddings.token_type_embeddings.weight = torch.nn.Parameter(single_emb.weight.repeat([2, 1]))
-    def forward(
-            self,
-            input_ids=None,
-            attention_mask=None,
-            token_type_ids=None,
-            position_ids=None,
-            inputs_embeds=None,
-            masked_lm_labels=None,
-    ):
-        input_embeds = []
-        for i,b in enumerate(input_ids):
-            input_id = input_ids[i]
-            token_type_id = token_type_ids[i]
-            emb = []
-            for j in range(self.MAX_LEN):
-                if token_type_id[j] == 0:
-                    if input_id[j] != -1:
-                        emb.append(self.bert.embeddings.word_embeddings(input_id[j]))
-                    else:
-                        emb.append(self.bert.embeddings.word_embeddings(torch.tensor(0).cuda()))
-                else:
-                    emb.append(self.ent_embeddings(input_id[j]))
-            input_embed = torch.cat([embedding.unsqueeze(0) for embedding in emb],dim = 0)
-            input_embeds.append(input_embed)
-        input_embeds = torch.cat([embedding.unsqueeze(0) for embedding in input_embeds],dim = 0).cuda()
-        outputs = self.bert(
-            input_ids=None,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            position_ids=position_ids,
-            inputs_embeds=input_embeds,
-        )
-        sequence_output = outputs[0]  # batch x seq_len x hidden_size
-        loss_fct = CrossEntropyLoss(ignore_index=-1)
-        ent_logits = self.ent_lm_head(sequence_output)
-        ent_predict = torch.argmax(ent_logits, dim=-1)
-        ent_masked_lm_loss = loss_fct(ent_logits.view(-1, ent_logits.size(-1)), masked_lm_labels.view(-1))
-        loss = ent_masked_lm_loss
-        return {'loss': loss,
-                'entity_pred': ent_predict,
-                'entity_logits': ent_logits,
-                'sequence_output': sequence_output}
-"""
 class PTBCNCOKE(BertForMaskedLM):
     config_class = BertConfig
     base_model_prefix = "bert"

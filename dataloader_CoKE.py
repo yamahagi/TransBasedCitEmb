@@ -13,33 +13,36 @@ import random
 WORD_PADDING_INDEX = 1
 ENTITY_PADDING_INDEX = 1
 
+#scibert embeddingsを取り出すためのmatrixを作る
+#dict1: key: citing id value: second dict
+#second dict: key: cited id: value: the context embeddings from citing id to cited id
 def makecitationmatrix_PeerRead(path,path_emb,ent_vocab):
-    dict1 = {}
+    dict_scibert = {}
     df = pd.read_csv(path)
     textemb = np.load(path_emb)
     target_ids = df["target_id"]
     source_ids = df["source_id"]
     for i,(target_id,source_id) in enumerate(zip(target_ids,source_ids)):
         emb = textemb[i]
-        if ent_vocab[target_id] not in dict1:
-            dict1[ent_vocab[target_id]] = {ent_vocab[source_id]:emb}
+        if ent_vocab[target_id] not in dict_scibert:
+            dict_scibert[ent_vocab[target_id]] = {ent_vocab[source_id]:emb}
         else:
-            dict1[ent_vocab[target_id]][ent_vocab[source_id]] = emb
-    return dict1
+            dict_scibert[ent_vocab[target_id]][ent_vocab[source_id]] = emb
+    return dict_scibert
 
 def makecitationmatrix_AASC(path,path_emb,ent_vocab):
-    dict1 = {}
+    dict_scibert = {}
     df = pd.read_csv(path,quotechar="'")
     textemb = np.load(path_emb)
     target_ids = df["target_id"]
     source_ids = df["source_id"]
     for i,(target_id,source_id) in enumerate(zip(target_ids,source_ids)):
         emb = textemb[i]
-        if ent_vocab[target_id] not in dict1:
-            dict1[ent_vocab[target_id]] = {ent_vocab[source_id]:emb}
+        if ent_vocab[target_id] not in dict_scibert:
+            dict_scibert[ent_vocab[target_id]] = {ent_vocab[source_id]:emb}
         else:
-            dict1[ent_vocab[target_id]][ent_vocab[source_id]] = emb
-    return dict1
+            dict_scibert[ent_vocab[target_id]][ent_vocab[source_id]] = emb
+    return dict_scibert
 
 class PeerReadDataSet(Dataset):
     def __init__(self, path, ent_vocab, MAX_LEN, matrix,mode="train"):

@@ -184,6 +184,7 @@ def build_ent_vocab(path,dataset="AASC"):
     for i,entity in enumerate(entitylist):
         ent_vocab[entity] = i+2
     return ent_vocab
+
 if __name__ == "__main__":
     ent_vocab = build_ent_vocab("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/train.csv")
     load_data_SVM_with_context(ent_vocab)
