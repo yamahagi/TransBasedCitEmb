@@ -6,6 +6,7 @@ from transformers import BertForMaskedLM, BertConfig
 import math
 import numpy as np
 
+#input sequence: [citing paper id,left_citation_context,masked cited id, right_citation_context]
 class PTBCN(BertForMaskedLM):
     config_class = BertConfig
     base_model_prefix = "bert"
@@ -33,16 +34,16 @@ class PTBCN(BertForMaskedLM):
         for i,b in enumerate(input_ids):
             input_id = input_ids[i]
             token_type_id = token_type_ids[i]
-            emb = []
+            embedding = []
             for j in range(self.MAX_LEN):
                 if token_type_id[j] == 0:
                     if input_id[j] != -1:
-                        emb.append(self.bert.embeddings.word_embeddings(input_id[j]))
+                        embedding.append(self.bert.embeddings.word_embeddings(input_id[j]))
                     else:
-                        emb.append(self.bert.embeddings.word_embeddings(torch.tensor(0).cuda()))
+                        embedding.append(self.bert.embeddings.word_embeddings(torch.tensor(0).cuda()))
                 else:
-                    emb.append(self.ent_embeddings(input_id[j]))
-            input_embed = torch.cat([embedding.unsqueeze(0) for embedding in emb],dim = 0)
+                    embedding.append(self.ent_embeddings(input_id[j]))
+            input_embed = torch.cat([emb.unsqueeze(0) for emb in embedding],dim = 0)
             input_embeds.append(input_embed)
         input_embeds = torch.cat([embedding.unsqueeze(0) for embedding in input_embeds],dim = 0).cuda()
         outputs = self.bert(
@@ -62,6 +63,8 @@ class PTBCN(BertForMaskedLM):
                 'entity_pred': ent_predict,
                 'entity_logits': ent_logits,
                 'sequence_output': sequence_output}
+
+#input sequence: [citing paper id, frozen SciBERT embeddings of citation context, cited paper id]
 class PTBCNCOKE(BertForMaskedLM):
     config_class = BertConfig
     base_model_prefix = "bert"
@@ -70,40 +73,12 @@ class PTBCNCOKE(BertForMaskedLM):
         self.ent_lm_head = EntLMHead(config,num_ent)
         self.ent_embeddings = nn.Embedding(num_ent, 768)
         self.MAX_LEN = MAX_LEN
-        #self.apply(self._init_weights)
 
     def change_type_embeddings(self):
         self.config.type_vocab_size = 2
         single_emb = self.bert.embeddings.token_type_embeddings
         self.bert.embeddings.token_type_embeddings = nn.Embedding(2, self.config.hidden_size)
         self.bert.embeddings.token_type_embeddings.weight = torch.nn.Parameter(single_emb.weight.repeat([2, 1]))
-    def get_embeddings(
-            self,
-            target_ids=None,
-            source_ids=None,
-            position_ids=None,
-            contexts=None,
-            token_type_ids=None,
-            attention_masks=None,
-            mask_positions=None,
-    ):
-        input_embeds = []
-        for target_id in target_ids:
-            emb = [torch.tensor([0]*768).cuda() for _ in range(3)]
-            emb[0] = self.ent_embeddings(target_id.cuda())
-            input_embed = torch.cat([embedding.unsqueeze(0) for embedding in emb],dim = 0)
-            input_embeds.append(input_embed)
-        input_embeds = torch.cat([embedding.unsqueeze(0) for embedding in input_embeds],dim = 0).cuda()
-        outputs = self.bert(
-            input_ids=None,
-            attention_mask=attention_masks,
-            token_type_ids=token_type_ids,
-            position_ids=position_ids,
-            inputs_embeds=input_embeds,
-        )
-        sequence_output = outputs[0]  # batch x seq_len x hidden_size
-        return {"sequence_output":sequence_output,
-                "emb":input_embeds}
 
     def forward(
             self,
@@ -171,13 +146,6 @@ class BertLayerNorm(nn.Module):
         return self.gamma * x + self.beta
 
 
-def gelu(x):
-    """ Original Implementation of the gelu activation function in Google Bert repo when initialy created.
-        For information: OpenAI GPT's gelu is slightly different (and gives slightly different results):
-        0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
-        Also see https://arxiv.org/abs/1606.08415
-    """
-    return x * 0.5 * (1.0 + torch.erf(x / math.sqrt(2.0)))
 
 class EntLMHead(nn.Module):
     def __init__(self, config,num_ent):

@@ -4,13 +4,16 @@ import random
 from transformers import RobertaTokenizer,BertTokenizer
 import torch
 import numpy as np
+from utils import build_ent_vocab
+import settings
+import os
 
 def load_raw_data():
-    dftrain5 = pd.read_csv("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/train_frequency5.csv",quotechar="'")
-    dftrain = pd.read_csv("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/train.csv",quotechar="'")
-    dftest = pd.read_csv("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/test.csv",quotechar="'")
-    ftrain = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_train.txt")
-    ftest = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_test.txt")
+    dftrain5 = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train_frequency5.csv"))
+    dftrain = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train.csv"))
+    dftest = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"test.csv"))
+    ftrain = open(settings.node_classification_dir,"title2task_train.txt")
+    ftest = open(settings.node_classification_dir,"title2tasl_test.txt")
     tail_train5_dict = defaultdict(dict)
     head_train5_dict = defaultdict(dict)
     tail_all_dict = defaultdict(dict)
@@ -87,10 +90,8 @@ def load_raw_data():
     return X_train,y_train,X_test,y_test
 
 #それぞれの辞書をinput_idに変換
-def convert_data(datas,ent_vocab):
-    tokenizer =  BertTokenizer.from_pretrained('/home/ohagi_masaya/TransBasedCitEmb/pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
-    MAX_LEN = 256
-    WINDOW_SIZE = 125
+def convert_data(datas,ent_vocab,MAX_LEN,WINDOW_SIZE):
+    tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
     converted_datas = []
     converted_elements = []
     for i,elements in enumerate(datas):
@@ -105,10 +106,7 @@ def convert_data(datas,ent_vocab):
             position_ids = []
             token_type_ids = []
             if data["th"] == "head":
-                citationcontextl.append(tokenizer.cls_token_id)
-                #citationcontextl.append(ent_vocab[target_id])
-                citationcontextl.append(ent_vocab["MASK"])
-                citationcontextl.append(tokenizer.sep_token_id)
+                citationcontextl.extend([tokenizer.cls_token_id,ent_vocab["MASK"],tokenizer.sep_token_id])
                 masked_ids.extend([-1,ent_vocab[target_id],-1])
                 position_ids.extend([0,1,2])
                 token_type_ids.extend([0,1,0])
@@ -117,14 +115,11 @@ def convert_data(datas,ent_vocab):
                 masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [ent_vocab[source_id]] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
                 token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
             else:
-                citationcontextl.append(tokenizer.cls_token_id)
-                citationcontextl.append(ent_vocab[target_id])
-                citationcontextl.append(tokenizer.sep_token_id)
+                citationcontextl.extend([tokenizer.cls_token_id,ent_vocab[target_id],tokenizer.sep_token_id])
                 masked_ids.extend([-1,-1,-1])
                 position_ids.extend([0,1,2])
                 token_type_ids.extend([0,1,0])
                 citationcontextl.extend(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab["MASK"]] + right_citation_tokenized[:WINDOW_SIZE])
-                #citationcontextl.extend(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE])
                 position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
                 masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [ent_vocab[source_id]] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
                 token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
@@ -137,10 +132,8 @@ def convert_data(datas,ent_vocab):
         converted_datas.append(converted_elements)
     return converted_datas
 
-def get_embeddings(model,datas):
+def get_embeddings(model,datas,MAX_LEN,WINDOW_SIZE):
     #それぞれのdataをモデルに入れてそのmaskedの場所のembeddingsを取得する
-    MAX_LEN = 256
-    WINDOW_SIZE = 125
     X_embeddings = []
     with torch.no_grad():
         for elements in datas:
@@ -164,26 +157,74 @@ def get_embeddings(model,datas):
             X_embeddings.append(np.average(X_elements,axis=0))
     return X_embeddings
 
-def load_data_SVM_with_context(model,ent_vocab):
+def load_data_SVM_with_context(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
     X_train,y_train,X_test,y_test = load_raw_data()
-    X_train = convert_data(X_train,ent_vocab)
-    X_test = convert_data(X_test,ent_vocab)
-    X_train = get_embeddings(model,X_train)
-    X_test = get_embeddings(model,X_test)
+    X_train = convert_data(X_train,ent_vocab,MAX_LEN,WINDOW_SIZE)
+    X_test = convert_data(X_test,ent_vocab,MAX_LEN,WINDOW_SIZE)
+    X_train = get_embeddings(model,X_train,MAX_LEN,WINDOW_SIZE)
+    X_test = get_embeddings(model,X_test,MAX_LEN,WINDOW_SIZE)
+    return X_train,y_train,X_test,y_test
+
+#AASCのnode classificationデータを読み込む
+def load_data_SVM_from_feedforward(model,entvocab):
+    ftrain = open(os.path.join(settings.node_classification_dir,"title2task_train.txt"))
+    taskn = -1
+    taskdict = {}
+    X_train = []
+    y_train = []
+    with torch.no_grad():
+        for i,line in enumerate(ftrain):
+            l = line[:-1].split("\t")
+            paper = l[0]
+            task = l[1]
+            if task not in taskdict:
+                taskn += 1
+                taskdict[task] = taskn
+            entity_logits = model.ent_lm_head.decoder.weight[entvocab[paper]]
+            X_train.append(np.array(entity_logits.cpu()))
+            y_train.append(taskdict[task])
+        ftest = open(os.path.join(settings.node_classification_dir,"title2task_test.txt"))
+        X_test = []
+        y_test = []
+        for line in ftest:
+            l = line[:-1].split("\t")
+            paper = l[0]
+            task = l[1]
+            entity_logits = model.ent_lm_head.decoder.weight[entvocab[paper]]
+            X_test.append(np.array(entity_logits.cpu()))
+            y_test.append(taskdict[task])
     return X_train,y_train,X_test,y_test
 
 
-def build_ent_vocab(path,dataset="AASC"):
-    ent_vocab = {"UNKNOWN":0,"MASK":1}
-    if dataset == "AASC":
-        df = pd.read_csv(path,quotechar="'")
-    else:
-        df = pd.read_csv(path)
-    entitylist = list(set(list(df["source_id"].values)+list(df["target_id"].values)))
-    entitylist.sort()
-    for i,entity in enumerate(entitylist):
-        ent_vocab[entity] = i+2
-    return ent_vocab
+#AASCのnode classificationデータを読み込む
+def load_data_SVM(model,ent_vocab):
+    ftrain = open(os.path.join(settings.node_classification_dir,"title2task_train.txt"))
+    taskn = -1
+    taskdict = {}
+    X_train = []
+    y_train = []
+    with torch.no_grad():
+        for i,line in enumerate(ftrain):
+            l = line[:-1].split("\t")
+            paper = l[0]
+            task = l[1]
+            if task not in taskdict:
+                taskn += 1
+                taskdict[task] = taskn
+            entity_logits = model.ent_embeddings(torch.tensor(ent_vocab[paper]))
+            X_train.append(np.array(entity_logits.cpu()))
+            y_train.append(taskdict[task])
+        ftest = open(os.path.join(settings.node_classification_dir,"title2task_test.txt"))
+        X_test = []
+        y_test = []
+        for line in ftest:
+            l = line[:-1].split("\t")
+            paper = l[0]
+            task = l[1]
+            entity_logits = model.ent_embeddings(torch.tensor(ent_vocab[paper]))
+            X_test.append(np.array(entity_logits.cpu()))
+            y_test.append(taskdict[task])
+    return X_train,y_train,X_test,y_test
 
 if __name__ == "__main__":
     ent_vocab = build_ent_vocab("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/train.csv")

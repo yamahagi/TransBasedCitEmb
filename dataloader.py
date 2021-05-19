@@ -9,9 +9,7 @@ import csv
 from utils import build_label_vocab, build_temp_ent_vocab,build_ent_vocab
 import numpy as np
 import random
-
-WORD_PADDING_INDEX = 1
-ENTITY_PADDING_INDEX = 1
+import settings
 
 #make masked paper prediction data
 def make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,tokenizer,ent_vocab,mask_position):
@@ -50,14 +48,14 @@ def make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,tokenizer,ent_vocab,mask_position
     return data
 
 class PeerReadDataSet(Dataset):
-    def __init__(self, path, ent_vocab, WINDOW_SIZE, MAX_LEN,pretrained_model):
+    def __init__(self, path, ent_vocab, WINDOW_SIZE, MAX_LEN, pretrained_model):
         self.path = path
         self.dirname = os.path.dirname(path)
         self.filename = os.path.basename(path)
         self.MAX_LEN = MAX_LEN
         self.data = []
         if pretrained_model == "scibert":
-            self.tokenizer =  BertTokenizer.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
+            self.tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
         else:
             self.tokenizer =  BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case =False)
         df = pd.read_csv(path)
@@ -101,7 +99,7 @@ class AASCDataSet(Dataset):
         self.MAX_LEN = MAX_LEN
         self.data = []
         if pretrained_model == "scibert":
-            self.tokenizer =  BertTokenizer.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
+            self.tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
         else:
             self.tokenizer =  BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case =False)
         jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(WINDOW_SIZE)+"_MAXLEN"+str(MAX_LEN)+"_pretrainedmodel"+str(pretrained_model)+"_TBCN.json")
@@ -147,7 +145,7 @@ class AASCDataSetRANDOM(Dataset):
         self.ent_vocab = ent_vocab
         self.data = []
         if pretrained_model == "scibert":
-            self.tokenizer =  BertTokenizer.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
+            self.tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
         else:
             self.tokenizer =  BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case =False)
         jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(WINDOW_SIZE)+"_MAXLEN"+str(MAX_LEN)+"_pretrainedmodel"+str(pretrained_model)+"_TBCN.json")
@@ -197,7 +195,7 @@ class AASCDataSet_eachMASK(Dataset):
         self.data = []
         self.ent_vocab = ent_vocab
         if pretrained_model == "scibert":
-            self.tokenizer =  BertTokenizer.from_pretrained('../pretrainedmodel/scibert_scivocab_uncased', do_lower_case =False)
+            self.tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
         else:
             self.tokenizer =  BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case =False)
         df = pd.read_csv(path,quotechar="'")
@@ -342,95 +340,6 @@ def load_AASC_graph_data(path,frequency,WINDOW_SIZE,MAX_LEN,pretrained_model):
     print("----loading data done----")
     return dataset_train,dataset_test_frequency5,entvocab
 
-#AASCのnode classificationデータを読み込む^
-def load_data_SVM(model,entvocab):
-    taskn = -1
-    taskdict = {}
-    ftrain = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_train.txt")
-    len1 = 0
-    for line in ftrain:
-        len1 += 1
-    ftrain = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_train.txt")
-    taskn = -1
-    X_train = []
-    y_train = []
-    with torch.no_grad():
-        for i,line in enumerate(ftrain):
-            l = line[:-1].split("\t")
-            paper = l[0]
-            task = l[1]
-            if task not in taskdict:
-                taskn += 1
-                taskdict[task] = taskn
-            masked_lm_labels1 = torch.tensor([[-1] *256])
-            position_ids1 = torch.tensor([[i for i in range(256)]])
-            token_type_ids1 = torch.tensor([[1] + [0]*255])
-            input_ids1 = torch.tensor([[entvocab[paper]] + [-1]*255])
-            adj = torch.ones(1, 1, dtype=torch.int)
-            adj = torch.cat((adj,torch.ones(255,adj.shape[1],dtype=torch.int)),dim=0)
-            adj = torch.cat((adj,torch.zeros(256,255,dtype=torch.int)),dim=1)
-            if i % 1000 == 0:
-                print("all")
-                print(len1)
-                print(i)
-            output = model(input_ids=input_ids1.cuda(),position_ids=position_ids1.cuda(),token_type_ids=token_type_ids1.cuda(),masked_lm_labels=masked_lm_labels1.cuda(),attention_mask=torch.stack([adj],dim=0).cuda())
-            entity_logits = output["sequence_output"][0][0]
-            X_train.append(np.array(entity_logits.cpu()))
-            y_train.append(taskdict[task])
-        ftest = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_test.txt")
-        X_test = []
-        y_test = []
-        for line in ftest:
-            l = line[:-1].split("\t")
-            paper = l[0]
-            task = l[1]
-            masked_lm_labels1 = torch.tensor([[-1] *256])
-            position_ids1 = torch.tensor([[i for i in range(256)]])
-            token_type_ids1 = torch.tensor([[1] + [0]*255])
-            input_ids1 = torch.tensor([[entvocab[paper]] + [-1]*255])
-            adj = torch.ones(1, 1, dtype=torch.int)
-            adj = torch.cat((adj,torch.ones(255,adj.shape[1],dtype=torch.int)),dim=0)
-            adj = torch.cat((adj,torch.zeros(256,255,dtype=torch.int)),dim=1)
-            output = model(input_ids=input_ids1.cuda(),position_ids=position_ids1.cuda(),token_type_ids=token_type_ids1.cuda(),masked_lm_labels=masked_lm_labels1.cuda(),attention_mask=torch.stack([adj],dim=0).cuda())
-            entity_logits = output["sequence_output"][0][0]
-            X_test.append(np.array(entity_logits.cpu()))
-            y_test.append(taskdict[task])
-    return X_train,y_train,X_test,y_test
-
-#AASCのnode classificationデータを読み込む
-def load_data_SVM_from_feedforward(model,entvocab):
-    taskn = -1
-    taskdict = {}
-    ftrain = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_train.txt")
-    len1 = 0
-    for line in ftrain:
-        len1 += 1
-    ftrain = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_train.txt")
-    taskn = -1
-    X_train = []
-    y_train = []
-    with torch.no_grad():
-        for i,line in enumerate(ftrain):
-            l = line[:-1].split("\t")
-            paper = l[0]
-            task = l[1]
-            if task not in taskdict:
-                taskn += 1
-                taskdict[task] = taskn
-            entity_logits = model.ent_lm_head.decoder.weight[entvocab[paper]]
-            X_train.append(np.array(entity_logits.cpu()))
-            y_train.append(taskdict[task])
-        ftest = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_test.txt")
-        X_test = []
-        y_test = []
-        for line in ftest:
-            l = line[:-1].split("\t")
-            paper = l[0]
-            task = l[1]
-            entity_logits = model.ent_lm_head.decoder.weight[entvocab[paper]]
-            X_test.append(np.array(entity_logits.cpu()))
-            y_test.append(taskdict[task])
-    return X_train,y_train,X_test,y_test
 
 def load_data_intent_identification(model,entvocab):
     intentn = -1

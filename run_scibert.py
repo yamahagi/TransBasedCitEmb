@@ -400,10 +400,6 @@ def main():
             left_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x["left_citated_text"]))
             right_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x["right_citated_text"]))
             text_tokenized = left_citation_tokenized[-256:]+right_citation_tokenized[:256]
-            """
-            text = x["text"]
-            text_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
-            """
             xlen = len(text_tokenized[:512])
             #xlen = len(left_citation_tokenized[-256:])+len(right_citation_tokenized[:256])
             word_pad = 512-xlen
@@ -425,10 +421,6 @@ def main():
         input_ids = []
         attention_masks = []
         for x,y1 in zip(X_test,y_test):
-            """
-            text = x["text"]
-            text_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
-            """
             left_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x["left_citated_text"]))
             right_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x["right_citated_text"]))
             text_tokenized = left_citation_tokenized[-256:]+right_citation_tokenized[:256]
