@@ -10,7 +10,7 @@ from transformers import BertConfig, BertTokenizer, BertForMaskedLM
 
 sys.path.append('../')
 from model import PTBCN
-from metrics import MacroMetric,Evaluation
+from metrics import Evaluation
 from utils import build_ent_vocab
 from dataloader import load_AASC_graph_data,load_PeerRead_graph_data
 from load_node_classification import load_data_SVM_with_context
@@ -38,14 +38,16 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=32, help="batch size")
     parser.add_argument('--frequency', type=int, default=5, help="frequency to remove rare entity")
     parser.add_argument('--lr', type=float, default=5e-5, help="learning rate")
-    parser.add_argument('--epoch', type=int, default=20, help="number of epochs")
-    parser.add_argument('--gpu', type=str, default='all', help="run script on which devices")
+    parser.add_argument('--epoch', type=int, default=10, help="number of epochs")
     parser.add_argument('--WINDOW_SIZE', type=int, default=125, help="the length of context length")
     parser.add_argument('--MAX_LEN', type=int, default=256, help="MAX length of the input")
     parser.add_argument('--train', type=bool, default=True, help="train or not")
     parser.add_argument('--predict', type=bool, default=True, help="predict or not")
     parser.add_argument('--node_classification', type=bool, default=True, help="conduct node classification or not")
     parser.add_argument('--pretrained_model', type=str, default="scibert", help="scibert or bert")
+    parser.add_argument('--mask_type', type=str, default="tail", help="mask [tail,random,both] paper")
+    parser.add_argument('--train_data', type=str, default="excluded", help="remove low frequency data or not [excluded,full] during training")
+    parser.add_argument('--test_data', type=str, default="excluded", help="remove low frequency data or not [excluded,full]")
     return parser.parse_args()
 
 #test evaluation for citation recommendation
@@ -59,7 +61,7 @@ def predict(args,epoch,model,ent_vocab,test_set):
     MAP_all = 0
     l_all = 0
     l_prev = 0
-    fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_tailMASK.txt","w")
+    fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_"+args.mask_type+".txt","w")
     with torch.no_grad():
         for (inputs,labels) in test_dataloader:
             outputs = model(input_ids=inputs["input_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),masked_lm_labels=inputs["masked_lm_labels"].cuda(),attention_mask=inputs["attention_mask"].cuda())
@@ -129,7 +131,7 @@ def node_classification(args,epoch,model,ent_vocab):
     svs = [svm.SVC(C=C, gamma=gamma).fit(X_train, y_train) for C, gamma in product(Cs, gammas)]
     products = [(C,gamma) for C,gamma in product(Cs,gammas)]
     print("training done")
-    fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_nodeclassification_feedforward.txt","w")
+    fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_"+args.mask_type+"_nodeclassification.txt","w")
     for sv,product1 in zip(svs,products):
         test_label = sv.predict(X_test)
         fw.write("C:"+str(product1[0])+","+"gamma:"+str(product1[1])+"\n")
@@ -143,7 +145,7 @@ def node_classification(args,epoch,model,ent_vocab):
         print(collections.Counter(test_label))
 
 def intent_identification(args,epoch,model,ent_vocab):
-    fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_intentidentification_randomMASK.txt","w")
+    fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_"+args.mask_type+"_intentidentification.txt","w")
     X,y = load_data_intent_identification(model,ent_vocab)
     print("intent identification data load done")
     l = [i for i in range(len(X))]
@@ -185,7 +187,7 @@ def intent_identification(args,epoch,model,ent_vocab):
 class Collate_fn():
     def __init__(self,MAX_LEN):
         self.max_words = MAX_LEN
-    def collate_fn(batch):
+    def collate_fn(self,batch):
         input_keys = ['input_ids','masked_lm_labels',"position_ids","token_type_ids","n_word_nodes","attention_mask"]
         target_keys = ["masked_lm_labels","word_seq_len"]
         batch_x = {n: [] for n in input_keys}
@@ -229,12 +231,10 @@ class Collate_fn():
 def main():
     args = parse_args()
 
-    if args.gpu != 'all':
-        os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
     #load entity embeddings
     #TODO 初期化をSPECTERで行う
-    train_set, test_set, ent_vocab = load_AASC_graph_data(settings.citation_recommendation_dir,args.frequency,args.WINDOW_SIZE,args.MAX_LEN,args.pretrained_model)
+    train_set, test_set, ent_vocab = load_AASC_graph_data(args)
     num_ent = len(ent_vocab)
 
     # load parameters
@@ -249,19 +249,18 @@ def main():
     # fine-tune
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
-    devices = list(range(torch.cuda.device_count()))
     if torch.cuda.is_available():
         print("GPU OK")
     else:
         print("GPU NO")
 
-    model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+".bin"
+    model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+".bin"
     pretrained_model_path = os.path.join(settings.model_path,model_name)
     print("train start")
-    if args.train == True:
+    if args.train:
         for epoch in range(1,args.epoch+1):
-            train_set, test_set, ent_vocab = load_AASC_graph_data(args.data_dir,args.frequency,args.WINDOW_SIZE,args.MAX_LEN,args.pretrained_model)
-            train_dataloader = torch.utils.data.DataLoader(train_set, batch_size = args.batch_size, shuffle = True, num_workers = 2, collate_fn=Collate_fn(args.MAX_LEN).collate_fn)
+            train_set, test_set, ent_vocab = load_AASC_graph_data(args)
+            train_dataloader = torch.utils.data.DataLoader(train_set, batch_size = args.batch_size, shuffle = True, num_workers = os.cpu_count()//2, collate_fn=Collate_fn(args.MAX_LEN).collate_fn)
             print("epoch: "+str(epoch))
             with tqdm(train_dataloader) as pbar:
                 for i,(inputs,labels) in enumerate(pbar):
@@ -273,13 +272,13 @@ def main():
                     pbar.set_postfix(collections.OrderedDict(loss=loss.detach().cpu().numpy()))
             if epoch % 5 == 0:
                 #save model
-                model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_randomMASK.bin"
+                model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+".bin"
                 torch.save(model.state_dict(),os.path.join(settings.model_path,model_name))
     print("train end")
-    if args.predict == True:
-        for i in range(1,2):
+    if args.predict:
+        for i in range(1,3):
             epoch = i*5
-            model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_randomMASK.bin"
+            model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+".bin"
             model.load_state_dict(torch.load(os.path.join(settings.model_path,model_name)))
             model.eval()
             predict(args,epoch,model,ent_vocab,test_set)
