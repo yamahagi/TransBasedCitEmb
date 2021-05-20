@@ -237,6 +237,12 @@ def main():
     train_set, test_set, ent_vocab = load_AASC_graph_data(args)
     num_ent = len(ent_vocab)
 
+    devices = list(range(torch.cuda.device_count()))
+    if torch.cuda.is_available():
+        print("GPU OK")
+    else:
+        print("GPU NO")
+
     # load parameters
     if args.pretrained_model == "scibert":
         model = PTBCN.from_pretrained(settings.pretrained_scibert_path,num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN)
@@ -248,11 +254,6 @@ def main():
 
     # fine-tune
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-
-    if torch.cuda.is_available():
-        print("GPU OK")
-    else:
-        print("GPU NO")
 
     model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+".bin"
     pretrained_model_path = os.path.join(settings.model_path,model_name)

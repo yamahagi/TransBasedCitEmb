@@ -47,6 +47,23 @@ def make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,tokenizer,ent_vocab,mask_position
     data = {'input_ids': citationcontextl[:MAX_LEN],'masked_lm_labels' : masked_ids[:MAX_LEN],'position_ids': position_ids[:MAX_LEN],'token_type_ids': token_type_ids[:MAX_LEN]}
     return data
 
+def make_json(df,jsonpath,tokenizer):
+    target_ids = df["target_id"]
+    source_ids = df["source_id"]
+    left_citation_texts = df["left_citated_text"]
+    right_citation_texts = df["right_citated_text"]
+    dic_json = []
+    for i,(target_id,source_id,left_citation_text,right_citation_text) in enumerate(zip(target_ids,source_ids,left_citation_texts,right_citation_texts)):
+        if i % 1000 == 0:
+            print(i)
+        left_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(left_citation_text))
+        right_citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(right_citation_text))
+        dic_data = {"target_id":target_id,"source_id":source_id,"left_citation_tokenized":left_citation_tokenized,"right_citation_tokenized":right_citation_tokenized}
+        dic_json.append(dic_data)
+    fids = open(jsonpath,"w")
+    json.dump(dic_json,fids)
+
+
 class PeerReadDataSet(Dataset):
     def __init__(self, path, ent_vocab, WINDOW_SIZE, MAX_LEN, pretrained_model):
         self.path = path
@@ -60,30 +77,13 @@ class PeerReadDataSet(Dataset):
             self.tokenizer =  BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case =False)
         df = pd.read_csv(path)
         jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(WINDOW_SIZE)+"_MAXLEN"+str(MAX_LEN)+"_pretrainedmodel"+str(pretrained_model)+".json")
-        if os.path.exists(jsonpath):
-            fids = open(jsonpath)
-            dic_json = json.load(fids)
-            for dic_data in dic_json:
-                data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
-                self.data.append(data)
-        else:
-            df = pd.read_csv(path,quotechar="'")
-            target_ids = df["target_id"]
-            source_ids = df["source_id"]
-            left_citation_texts = df["left_citated_text"]
-            right_citation_texts = df["right_citated_text"]
-            dic_json = []
-            for i,(target_id,source_id,left_citation_text,right_citation_text) in enumerate(zip(target_ids,source_ids,left_citation_texts,right_citation_texts)):
-                if i % 1000 == 0:
-                    print(i)
-                left_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(left_citation_text))
-                right_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(right_citation_text))
-                dic_data = {"target_id":target_id,"source_id":source_id,"left_citation_tokenized":left_citation_tokenized,"right_citation_tokenized":right_citation_tokenized}
-                data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
-                self.data.append(data)
-                dic_json.append(dic_data)
-            fids = open(jsonpath,"w")
-            json.dump(dic_json,fids)
+        if not(os.path.exists(jsonpath)):
+            make_json(df,jsonpath,self.tokenizer)
+        fids = open(jsonpath)
+        dic_json = json.load(fids)
+        for dic_data in dic_json:
+            data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
+            self.data.append(data)
 
     def __len__(self):
         return len(self.data)
@@ -102,32 +102,15 @@ class AASCDataSet(Dataset):
             self.tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
         else:
             self.tokenizer =  BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case =False)
+        df = pd.read_csv(path,quotechar="'")
         jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(WINDOW_SIZE)+"_MAXLEN"+str(MAX_LEN)+"_pretrainedmodel"+str(pretrained_model)+"_TBCN.json")
-        if os.path.exists(jsonpath):
-            fids = open(jsonpath)
-            dic_json = json.load(fids)
-            for dic_data in dic_json:
-                data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
-                self.data.append(data)
-        else:
-            df = pd.read_csv(path,quotechar="'")
-            target_ids = df["target_id"]
-            source_ids = df["source_id"]
-            left_citation_texts = df["left_citated_text"]
-            right_citation_texts = df["right_citated_text"]
-            dic_json = []
-            for i,(target_id,source_id,left_citation_text,right_citation_text) in enumerate(zip(target_ids,source_ids,left_citation_texts,right_citation_texts)):
-                if i % 1000 == 0:
-                    print(i)
-                left_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(left_citation_text))
-                right_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(right_citation_text))
-                dic_data = {"target_id":target_id,"source_id":source_id,"left_citation_tokenized":left_citation_tokenized,"right_citation_tokenized":right_citation_tokenized}
-                data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
-                self.data.append(data)
-                dic_json.append(dic_data)
-            fids = open(jsonpath,"w")
-            json.dump(dic_json,fids)
-
+        if not(os.path.exists(jsonpath)):
+             make_json(df,jsonpath,self.tokenizer)
+        fids = open(jsonpath)
+        dic_json = json.load(fids)
+        for dic_data in dic_json:
+            data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
+            self.data.append(data)
 
     def __len__(self):
         return len(self.data)
@@ -148,37 +131,18 @@ class AASCDataSetRANDOM(Dataset):
             self.tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
         else:
             self.tokenizer =  BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case =False)
-        jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(WINDOW_SIZE)+"_MAXLEN"+str(MAX_LEN)+"_pretrainedmodel"+str(pretrained_model)+"_TBCN_RANDOM.json")
-        if os.path.exists(jsonpath):
-            fids = open(jsonpath)
-            dic_json = json.load(fids)
-            for dic_data in dic_json:
-                if random.random() < 0.5 or mode == "test":
-                    data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
-                else:
-                    data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"citing")
-                self.data.append(data)
-        else:
-            df = pd.read_csv(path,quotechar="'")
-            target_ids = df["target_id"]
-            source_ids = df["source_id"]
-            left_citation_texts = df["left_citated_text"]
-            right_citation_texts = df["right_citated_text"]
-            dic_json = []
-            for i,(target_id,source_id,left_citation_text,right_citation_text) in enumerate(zip(target_ids,source_ids,left_citation_texts,right_citation_texts)):
-                if i % 1000 == 0:
-                    print(i)
-                left_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(left_citation_text))
-                right_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(right_citation_text))
-                dic_data = {"target_id":target_id,"source_id":source_id,"left_citation_tokenized":left_citation_tokenized,"right_citation_tokenized":right_citation_tokenized}
-                if random.random() < 0.5 or mode == "test":
-                    data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
-                else:
-                    data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"citing")
-                self.data.append(data)
-                dic_json.append(dic_data)
-            fids = open(jsonpath,"w")
-            json.dump(dic_json,fids)
+        df = pd.read_csv(path,quotechar="'")
+        jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(WINDOW_SIZE)+"_MAXLEN"+str(MAX_LEN)+"_pretrainedmodel"+str(pretrained_model)+"_TBCN.json")
+        if not(os.path.exists(jsonpath)):
+             make_json(df,jsonpath,self.tokenizer)
+        fids = open(jsonpath)
+        dic_json = json.load(fids)
+        for dic_data in dic_json:
+            if random.random() < 0.5 or mode == "test":
+                data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
+            else:
+                data = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"citing")
+            self.data.append(data)
 
     def __len__(self):
         return len(self.data)
@@ -199,39 +163,18 @@ class AASCDataSetBOTH(Dataset):
         else:
             self.tokenizer =  BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case =False)
         df = pd.read_csv(path,quotechar="'")
-        jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(WINDOW_SIZE)+"_MAXLEN"+str(MAX_LEN)+"_pretrainedmodel"+str(pretrained_model)+"_TBCN_BOTH.json")
-        if os.path.exists(jsonpath):
-            fids = open(jsonpath)
-            dic_json = json.load(fids)
-            for dic_data in dic_json:
-                data_cited_mask = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
-                data_citing_mask = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"citing")
-                if mode == "train":
-                    self.data.extend([data_cited_mask,data_citing_mask])
-                else:
-                    self.data.extend([data_cited_mask])
-        else:
-            df = pd.read_csv(path,quotechar="'")
-            target_ids = df["target_id"]
-            source_ids = df["source_id"]
-            left_citation_texts = df["left_citated_text"]
-            right_citation_texts = df["right_citated_text"]
-            dic_json = []
-            for i,(target_id,source_id,left_citation_text,right_citation_text) in enumerate(zip(target_ids,source_ids,left_citation_texts,right_citation_texts)):
-                if i % 1000 == 0:
-                    print(i)
-                left_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(left_citation_text))
-                right_citation_tokenized = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(right_citation_text))
-                dic_data = {"target_id":target_id,"source_id":source_id,"left_citation_tokenized":left_citation_tokenized,"right_citation_tokenized":right_citation_tokenized}
-                data_cited_mask = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
-                data_citing_mask = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"citing")
-                if mode == "train":
-                    self.data.extend([data_cited_mask,data_citing_mask])
-                else:
-                    self.data.extend([data_cited_mask])
-                dic_json.append(dic_data)
-            fids = open(jsonpath,"w")
-            json.dump(dic_json,fids)
+        jsonpath = os.path.join(self.dirname,self.filename[:-4]+"_window"+str(WINDOW_SIZE)+"_MAXLEN"+str(MAX_LEN)+"_pretrainedmodel"+str(pretrained_model)+"_TBCN.json")
+        if not(os.path.exists(jsonpath)):
+             make_json(df,jsonpath,self.tokenizer)
+        fids = open(jsonpath)
+        dic_json = json.load(fids)
+        for dic_data in dic_json:
+            data_cited_mask = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"cited")
+            data_citing_mask = make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,self.tokenizer,ent_vocab,"citing")
+            if mode == "train":
+                self.data.extend([data_cited_mask,data_citing_mask])
+            else:
+                self.data.extend([data_cited_mask])
 
     def __len__(self):
         return len(self.data)
