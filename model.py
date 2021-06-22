@@ -10,9 +10,12 @@ import numpy as np
 class PTBCN(BertForMaskedLM):
     config_class = BertConfig
     base_model_prefix = "bert"
-    def __init__(self, config, num_ent, MAX_LEN):
+    def __init__(self, config, num_ent, MAX_LEN, final_layer):
         super().__init__(config)
-        self.ent_lm_head = EntLMHead(config,num_ent)
+        if final_layer == "feedforward":
+            self.ent_lm_head = EntLMHead(config,num_ent)
+        else:
+            self.ent_lm_head = EntLinearLMHead(config,num_ent)
         self.ent_embeddings = nn.Embedding(num_ent, 768)
         self.MAX_LEN = MAX_LEN
 
@@ -52,8 +55,10 @@ class PTBCN(BertForMaskedLM):
             token_type_ids=token_type_ids,
             position_ids=position_ids,
             inputs_embeds=input_embeds,
+            output_hidden_states=True
         )
         sequence_output = outputs[0]  # batch x seq_len x hidden_size
+        outputs_each_layer = outputs[2]
         loss_fct = CrossEntropyLoss(ignore_index=-1)
         ent_logits = self.ent_lm_head(sequence_output)
         ent_predict = torch.argmax(ent_logits, dim=-1)
@@ -62,7 +67,8 @@ class PTBCN(BertForMaskedLM):
         return {'loss': loss,
                 'entity_pred': ent_predict,
                 'entity_logits': ent_logits,
-                'sequence_output': sequence_output}
+                'sequence_output': sequence_output,
+                'outputs_each_layer': outputs_each_layer}
 
 #input sequence: [citing paper id, frozen SciBERT embeddings of citation context, cited paper id]
 class PTBCNCOKE(BertForMaskedLM):
@@ -87,23 +93,24 @@ class PTBCNCOKE(BertForMaskedLM):
             position_ids=None,
             contexts=None,
             token_type_ids=None,
-            attention_masks=None,
+            attention_mask=None,
             mask_positions=None,
     ):
         input_embeds = []
         masked_lm_labels = []
+        mask_id = 1
         for target_id,context,source_id,mask_position in zip(target_ids,contexts,source_ids,mask_positions):
             emb = []
             masked_lm_label = []
             if mask_position == 0:
-                emb.append(self.ent_embeddings(torch.tensor(1).cuda()))
+                emb.append(self.ent_embeddings(torch.tensor(mask_id).cuda()))
                 emb.append(context.cuda())
                 emb.append(self.ent_embeddings(source_id.cuda()))
                 masked_lm_label.append(torch.tensor([target_id,-1,-1]))
             else:
                 emb.append(self.ent_embeddings(target_id.cuda()))
                 emb.append(context.cuda())
-                emb.append(self.ent_embeddings(torch.tensor(1).cuda()))
+                emb.append(self.ent_embeddings(torch.tensor(mask_id).cuda()))
                 masked_lm_label.append(torch.tensor([-1,-1,source_id]))
             input_embed = torch.cat([embedding.unsqueeze(0) for embedding in emb],dim = 0)
             masked_lm_label = torch.cat([label.unsqueeze(0) for label in masked_lm_label],dim=0)
@@ -113,7 +120,7 @@ class PTBCNCOKE(BertForMaskedLM):
         masked_lm_labels = torch.cat([masked_lm_label.unsqueeze(0) for masked_lm_label in masked_lm_labels],dim = 0).cuda()
         outputs = self.bert(
             input_ids=None,
-            attention_mask=attention_masks,
+            attention_mask=attention_mask,
             token_type_ids=token_type_ids,
             position_ids=position_ids,
             inputs_embeds=input_embeds,
@@ -170,5 +177,5 @@ class EntLinearLMHead(nn.Module):
         self.decoder = nn.Linear(config.hidden_size, num_ent)
 
     def forward(self, features, **kwargs):
-        x = self.decoder(x)
+        x = self.decoder(features)
         return x

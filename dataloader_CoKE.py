@@ -66,6 +66,23 @@ def makecitationmatrix_AASC(path,path_emb,ent_vocab):
             dict_scibert[ent_vocab[target_id]][ent_vocab[source_id]] = emb
     return dict_scibert
 
+def make_matrix(ent_vocab):
+    path = settings.citation_recommendation_dir
+    path_train = os.path.join(path,"train.csv")
+    path_test = os.path.join(path,"test.csv")
+    path_emb_train = os.path.join(path,"scibert_AASCtrain.npy")
+    path_emb_test = os.path.join(path,"scibert_AASCtest.npy")
+    matrix_train = makecitationmatrix_AASC(path_train,path_emb_train,ent_vocab)
+    matrix_test = makecitationmatrix_AASC(path_test,path_emb_test,ent_vocab)
+    matrix = matrix_train
+    for target_id in matrix_test:
+        if target_id in matrix:
+            for source_id in matrix_test[target_id]:
+                matrix[target_id][source_id] = matrix_test[target_id][source_id]
+        else:
+            matrix[target_id] = matrix_test[target_id]
+    return matrix
+
 class PeerReadDataSet(Dataset):
     def __init__(self, path, ent_vocab, MAX_LEN, matrix,mode="train"):
         self.path = path
@@ -126,39 +143,9 @@ class AASCDataSet(Dataset):
     def __getitem__(self, item):
         return self.data[item]
 
-class Collate_fn():
-    def __init__(self,MAX_LEN):
-        self.max_words = MAX_LEN
-    def collate_fn(self, batch):
-        input_keys = ['target_ids','source_ids',"position_ids","contexts","token_type_ids","attention_mask","mask_positions"]
-        target_keys = ["target_ids","source_ids"]
-        max_words = self.MAX_LEN
-        batch_x = {n: [] for n in input_keys}
-        batch_y = {n: [] for n in target_keys}
-
-        for sample in batch:
-            batch_x["position_ids"].append([0,1,2])
-            batch_x["token_type_ids"].append([1,0,1])
-            batch_x["target_ids"].append(sample["target_id"])
-            batch_x["source_ids"].append(sample["source_id"])
-            batch_x["contexts"].append(self.matrix[sample["target_id"]][sample["source_id"]])
-            batch_x["mask_positions"].append(sample["MASK_position"])
-            adj = torch.ones(3,3,dtype=torch.int)
-            batch_x["attention_mask"].append(adj)
-            batch_y["target_ids"].append(sample["target_id"])
-            batch_y["source_ids"].append(sample["source_id"])
-        for k, v in batch_x.items():
-            if k == 'attention_mask':
-                batch_x[k] = torch.stack(v, dim=0)
-            else:
-                batch_x[k] = torch.tensor(v)
-        for k, v in batch_y.items():
-            batch_y[k] = torch.tensor(v)
-        return (batch_x, batch_y)
-
 
 #入力: directory
-def load_PeerRead_graph_data(path,frequency,MAX_LEN):
+def load_PeerRead_graph_data(args):
     def extract_by_frequency(path_train, path_test,frequency):
         dftrain = pd.read_csv(path_train)
         dftest = pd.read_csv(path_test)
@@ -200,6 +187,7 @@ def load_PeerRead_graph_data(path,frequency,MAX_LEN):
         for i,entity in enumerate(entitylist):
             entvocab[entity] = i+2
         return path_train[:-4]+"_frequency"+str(frequency)+".csv",path_test[:-4]+"_frequency"+str(frequency)+".csv",entvocab
+    path = settings.citation_recommendation_dir
     path_train = os.path.join(path,"train.csv")
     path_test = os.path.join(path,"test.csv")
     path_emb_train = os.path.join(path,"scibert_PeerReadtrain.npy")
@@ -207,15 +195,15 @@ def load_PeerRead_graph_data(path,frequency,MAX_LEN):
     entvocab = build_ent_vocab(path_train,dataset="PeerRead")
     matrix_train = makecitationmatrix_PeerRead(path_train,path_emb_train,entvocab)
     matrix_test = makecitationmatrix_PeerRead(path_test,path_emb_test,entvocab)
-    path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,frequency)
-    dataset_train = PeerReadDataSet(path_train,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_train)
-    dataset_test = PeerReadDataSet(path_test,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_test,mode="test")
-    dataset_train_frequency5 = PeerReadDataSet(path_train_frequency5,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_train)
-    dataset_test_frequency5 = PeerReadDataSet(path_test_frequency5,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_test,mode="test")
+    path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,args.frequency)
+    dataset_train = PeerReadDataSet(path_train,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_train)
+    dataset_test = PeerReadDataSet(path_test,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_test,mode="test")
+    dataset_train_frequency5 = PeerReadDataSet(path_train_frequency5,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_train)
+    dataset_test_frequency5 = PeerReadDataSet(path_test_frequency5,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_test,mode="test")
     return dataset_train,dataset_test_frequency5,entvocab
 
 #入力: directory
-def load_AASC_graph_data(path,frequency,MAX_LEN):
+def load_AASC_graph_data(args):
     def extract_by_frequency(path_train, path_test,frequency):
         dftrain = pd.read_csv(path_train,quotechar="'")
         dftest = pd.read_csv(path_test,quotechar="'")
@@ -257,6 +245,7 @@ def load_AASC_graph_data(path,frequency,MAX_LEN):
         for i,entity in enumerate(entitylist):
             entvocab[entity] = i+2
         return path_train[:-4]+"_frequency"+str(frequency)+".csv",path_test[:-4]+"_frequency"+str(frequency)+".csv",entvocab
+    path = settings.citation_recommendation_dir
     path_train = os.path.join(path,"train.csv")
     path_test = os.path.join(path,"test.csv")
     path_emb_train = os.path.join(path,"scibert_AASCtrain.npy")
@@ -264,12 +253,16 @@ def load_AASC_graph_data(path,frequency,MAX_LEN):
     entvocab = build_ent_vocab(path_train)
     matrix_train = makecitationmatrix_AASC(path_train,path_emb_train,entvocab)
     matrix_test = makecitationmatrix_AASC(path_test,path_emb_test,entvocab)
-    path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,frequency)
-    dataset_train = AASCDataSet(path_train,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_train)
-    dataset_test = AASCDataSet(path_test,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_test,mode="test")
-    dataset_train_frequency5 = AASCDataSet(path_train_frequency5,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_train)
-    dataset_test_frequency5 = AASCDataSet(path_test_frequency5,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_test,mode="test")
-    return dataset_train,dataset_test_frequency5,entvocab
+    path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,args.frequency)
+    if args.train_data == "full":
+        dataset_train = AASCDataSet(path_train,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_train)
+    else:
+        dataset_train = AASCDataSet(path_train_frequency5,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_train)
+    if args.test_data == "full":
+        dataset_test = AASCDataSet(path_test,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_test,mode="test")
+    else:
+        dataset_test = AASCDataSet(path_test_frequency5,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_test,mode="test")
+    return dataset_train,dataset_test,entvocab
 
 
 if __name__ == "__main__":

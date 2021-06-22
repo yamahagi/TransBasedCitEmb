@@ -1,4 +1,5 @@
 import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 import sys
 
 import argparse
@@ -13,7 +14,8 @@ from model import PTBCN
 from metrics import Evaluation
 from utils import build_ent_vocab
 from dataloader import load_AASC_graph_data,load_PeerRead_graph_data
-from load_node_classification import load_data_SVM_with_context
+from load_node_classification import load_data_SVM_with_context,load_data_SVM_from_feedforward,load_data_SVM_with_context_all_layer
+from load_intent_identification import load_data_intent_identification_with_context
 from itertools import product
 import collections
 from tqdm import tqdm
@@ -35,15 +37,15 @@ import settings
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='AASC',help="AASC or PeerRead")
-    parser.add_argument('--batch_size', type=int, default=32, help="batch size")
+    parser.add_argument('--batch_size', type=int, default=16, help="batch size")
     parser.add_argument('--frequency', type=int, default=5, help="frequency to remove rare entity")
     parser.add_argument('--lr', type=float, default=5e-5, help="learning rate")
-    parser.add_argument('--epoch', type=int, default=10, help="number of epochs")
+    parser.add_argument('--epoch', type=int, default=5, help="number of epochs")
     parser.add_argument('--WINDOW_SIZE', type=int, default=125, help="the length of context length")
     parser.add_argument('--MAX_LEN', type=int, default=256, help="MAX length of the input")
-    parser.add_argument('--train', type=bool, default=True, help="train or not")
-    parser.add_argument('--predict', type=bool, default=True, help="predict or not")
-    parser.add_argument('--node_classification', type=bool, default=True, help="conduct node classification or not")
+    parser.add_argument('--final_layer', type=str, default="feedforward", help="choose final layer feedforward or linear layer")
+    parser.add_argument('--train', action='store_true')
+    parser.add_argument('--predict', action='store_true')
     parser.add_argument('--pretrained_model', type=str, default="scibert", help="scibert or bert")
     parser.add_argument('--mask_type', type=str, default="tail", help="mask [tail,random,both] paper")
     parser.add_argument('--train_data', type=str, default="excluded", help="remove low frequency data or not [excluded,full] during training")
@@ -54,14 +56,11 @@ def parse_args():
 def predict(args,epoch,model,ent_vocab,test_set):
     test_dataloader = torch.utils.data.DataLoader(test_set, batch_size = 1, shuffle = False, num_workers = 2, collate_fn=Collate_fn(args.MAX_LEN).collate_fn)
     mrr_all = 0
-    Recallat5_all = 0
-    Recallat10_all = 0
-    Recallat30_all = 0
-    Recallat50_all = 0
+    Recallat5_all = Recallat10_all = Recallat30_all = Recallat50_all = 0
     MAP_all = 0
     l_all = 0
     l_prev = 0
-    fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_"+args.mask_type+".txt","w")
+    fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+".txt","w")
     with torch.no_grad():
         for (inputs,labels) in test_dataloader:
             outputs = model(input_ids=inputs["input_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),masked_lm_labels=inputs["masked_lm_labels"].cuda(),attention_mask=inputs["attention_mask"].cuda())
@@ -77,34 +76,17 @@ def predict(args,epoch,model,ent_vocab,test_set):
                 l_prev = l_all
                 print(l_all)
                 print(mrr_all/l_all)
-        fw.write("MRR\n")
-        fw.write(str(mrr_all/l_all)+"\n")
-        fw.write("Recallat5\n")
-        fw.write(str(Recallat5_all/l_all)+"\n")
-        fw.write("Recallat10\n")
-        fw.write(str(Recallat10_all/l_all)+"\n")
-        fw.write("Recallat30\n")
-        fw.write(str(Recallat30_all/l_all)+"\n")
-        fw.write("Recallat50\n")
-        fw.write(str(Recallat50_all/l_all)+"\n")
-        fw.write("MAP\n")
-        fw.write(str(MAP_all/l_all)+"\n")
-        print("MRR")
-        print(mrr_all/l_all)
-        print("Recallat5")
-        print(Recallat5_all/l_all)
-        print("Recallat10")
-        print(Recallat10_all/l_all)
-        print("Recallat30")
-        print(Recallat30_all/l_all)
-        print("Recallat50")
-        print(Recallat50_all/l_all)
-        print("MAP")
-        print(MAP_all/l_all)
+        s = ""
+        s += "MRR\n" + str(mrr_all/l_all)+"\n"
+        s += "Recallat5\n" + str(Recallat5_all/l_all)+"\n"
+        s += "Recallat10\n" + str(Recallat10_all/l_all)+"\n"
+        s += "Recallat30\n" + str(Recallat30_all/l_all)+"\n"
+        s += "MAP\n" + str(MAP_all/l_all)+"\n"
+        fw.write(s)
+        print(s)
 
 def node_classification(args,epoch,model,ent_vocab):
-    X_train,y_train,X_test,y_test = load_data_SVM_with_context(model,ent_vocab)
-    X_train,y_train,X_test,y_test = load_data_SVM_from_feedforward(model,ent_vocab)
+    X_train,y_train,X_test,y_test = load_data_SVM_with_context(model,ent_vocab,args.MAX_LEN,args.WINDOW_SIZE)
     print("SVM data load done")
     print("training start")
     print("PCA start")
@@ -125,7 +107,7 @@ def node_classification(args,epoch,model,ent_vocab):
         X_color_x = np.array([X_place[0] for X_place in X_color])
         X_color_y = np.array([X_place[1] for X_place in X_color])
         ax.scatter(X_color_x,X_color_y,c=color)
-    pyplot.savefig("TransBasedCitEmb_feedforward.png") # 保存
+    pyplot.savefig("images/TransBasedCitEmb_randomMASK.png") # 保存
     Cs = [2 , 2**5, 2 **10]
     gammas = [2 ** -9, 2 ** -6, 2** -3,2 ** 3, 2 ** 6, 2 ** 9]
     svs = [svm.SVC(C=C, gamma=gamma).fit(X_train, y_train) for C, gamma in product(Cs, gammas)]
@@ -145,11 +127,52 @@ def node_classification(args,epoch,model,ent_vocab):
         print(collections.Counter(test_label))
 
 def intent_identification(args,epoch,model,ent_vocab):
-    fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_"+args.mask_type+"_intentidentification.txt","w")
-    X,y = load_data_intent_identification(model,ent_vocab)
+    #fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_"+args.mask_type+"_intentidentification.txt","w")
+    X,y = load_data_intent_identification_with_context(model,ent_vocab,args.MAX_LEN,args.WINDOW_SIZE)
+    X_concat = [np.concatenate([x[0],x[1]]) for x in X]
+    X_minus = [x[0]-x[1] for x in X]
     print("intent identification data load done")
-    l = [i for i in range(len(X))]
-    random.shuffle(l)
+    print("PCA start")
+    pca = PCA(n_components=2)
+    pca.fit(X_concat)
+    X_visualization = pca.transform(X_concat)
+    print("PCA done: " + str(len(X_concat)))
+    print("Y length: " + str(len(y)))
+    print("Y distribution")
+    print(collections.Counter(y))
+    print("visualization start")
+    fig, ax = pyplot.subplots(figsize=(20,20))
+    X_colors = [[] for _ in range(max(y)+1)]
+    y_colors = [[] for _ in range(max(y)+1)]
+    colors_name = ["black","grey","tomato","saddlebrown","palegoldenrod","olivedrab","cyan","steelblue","midnightblue","darkviolet","magenta","pink","yellow"]
+    for x1,y1 in zip(X_visualization,y):
+        X_colors[y1].append(x1)
+        y_colors[y1].append(y1)
+    for X_color,color in zip(X_colors,colors_name[:len(y_colors)]):
+        X_color_x = np.array([X_place[0] for X_place in X_color])
+        X_color_y = np.array([X_place[1] for X_place in X_color])
+        ax.scatter(X_color_x,X_color_y,c=color)
+    pyplot.savefig("images/TransBasedCitEmb_intent_identification_concat.png") # 保存
+    print("PCA start")
+    pca = PCA(n_components=2)
+    pca.fit(X_minus)
+    X_visualization = pca.transform(X_minus)
+    print("PCA done: " + str(len(X_minus)))
+    print("Y length: " + str(len(y)))
+    print("visualization start")
+    fig, ax = pyplot.subplots(figsize=(20,20))
+    X_colors = [[] for _ in range(max(y)+1)]
+    y_colors = [[] for _ in range(max(y)+1)]
+    colors_name = ["black","grey","tomato","saddlebrown","palegoldenrod","olivedrab","cyan","steelblue","midnightblue","darkviolet","magenta","pink","yellow"]
+    for x1,y1 in zip(X_visualization,y):
+        X_colors[y1].append(x1)
+        y_colors[y1].append(y1)
+    for X_color,color in zip(X_colors,colors_name[:len(y_colors)]):
+        X_color_x = np.array([X_place[0] for X_place in X_color])
+        X_color_y = np.array([X_place[1] for X_place in X_color])
+        ax.scatter(X_color_x,X_color_y,c=color)
+    pyplot.savefig("images/TransBasedCitEmb_intent_identification_minus.png") # 保存
+    """
     for epoch in range(5):
         if epoch == 0:
             X_train = [X[i] for i in l[:len(l)//5]]
@@ -183,6 +206,7 @@ def intent_identification(args,epoch,model,ent_vocab):
             print("マクロ平均＝", f1_score(y_test, test_label,average="macro"))
             print("ミクロ平均＝", f1_score(y_test, test_label,average="micro"))
             print(collections.Counter(test_label))
+    """
 
 class Collate_fn():
     def __init__(self,MAX_LEN):
@@ -230,7 +254,8 @@ class Collate_fn():
 
 def main():
     args = parse_args()
-
+    print("arguments")
+    print(args)
 
     #load entity embeddings
     #TODO 初期化をSPECTERで行う
@@ -245,9 +270,9 @@ def main():
 
     # load parameters
     if args.pretrained_model == "scibert":
-        model = PTBCN.from_pretrained(settings.pretrained_scibert_path,num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN)
+        model = PTBCN.from_pretrained(settings.pretrained_scibert_path,num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN,final_layer=args.final_layer)
     else:
-        model = PTBCN.from_pretrained('bert-base-uncased',num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN)
+        model = PTBCN.from_pretrained('bert-base-uncased',num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN,final_layer=args.final_layer)
     model.change_type_embeddings()
     model.cuda()
     print('parameters of SciBERT has been loaded.')
@@ -255,7 +280,7 @@ def main():
     # fine-tune
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
-    model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+".bin"
+    model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+".bin"
     pretrained_model_path = os.path.join(settings.model_path,model_name)
     print("train start")
     if args.train:
@@ -273,17 +298,19 @@ def main():
                     pbar.set_postfix(collections.OrderedDict(loss=loss.detach().cpu().numpy()))
             if epoch % 5 == 0:
                 #save model
-                model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+".bin"
+                model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+".bin"
                 torch.save(model.state_dict(),os.path.join(settings.model_path,model_name))
     print("train end")
     if args.predict:
-        for i in range(1,3):
+        for i in range(1,args.epoch//5+1):
             epoch = i*5
-            model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+".bin"
+            model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+".bin"
+            #model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+".bin"
             model.load_state_dict(torch.load(os.path.join(settings.model_path,model_name)))
             model.eval()
-            predict(args,epoch,model,ent_vocab,test_set)
-            node_classification(args,epoch,model,ent_vocab)
+            #predict(args,epoch,model,ent_vocab,test_set)
+            #node_classification(args,epoch,model,ent_vocab)
+            intent_identification(args,epoch,model,ent_vocab)
 
 
 if __name__ == '__main__':
