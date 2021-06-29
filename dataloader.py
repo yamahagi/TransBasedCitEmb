@@ -620,7 +620,7 @@ def load_AASC_graph_data(path,frequency,WINDOW_SIZE,MAX_LEN,pretrained_model):
     dataset_test = AASCDataSet(path_test,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model,mode="test")
     dataset_test_frequency5 = AASCDataSet(path_test_frequency5,ent_vocab=entvocab,WINDOW_SIZE=WINDOW_SIZE,MAX_LEN=MAX_LEN,pretrained_model=pretrained_model,mode="test")
     print("----loading data done----")
-    return dataset_train_frequency5,dataset_test_frequency5,entvocab
+    return dataset_train,dataset_test_frequency5,entvocab
 
 #AASCのnode classificationデータを読み込む^
 def load_data_SVM(model,entvocab):
