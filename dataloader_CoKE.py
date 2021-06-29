@@ -2,44 +2,86 @@ import os
 import torch
 import json
 from torch.utils.data import Dataset
-from transformers import RobertaTokenizer,BertTokenizer
+from transformers import RobertaTokenizer,BertTokenizer,BertModel
 import re
 import pandas as pd
 import csv
 from utils import build_label_vocab, build_temp_ent_vocab,build_ent_vocab
 import numpy as np
 import random
+import settings
 
-WORD_PADDING_INDEX = 1
-ENTITY_PADDING_INDEX = 1
+#frozen scibert context embeddingsを作成
+def make_context_embeddings(df,path_emb):
+    if os.path.exists(path_emb):
+        contexts = np.load(path_emb)
+        return contexts
+    contexts = []
+    model = BertModel.from_pretrained(settings.pretrained_scibert_path)
+    tokenizer = BertTokenizer.from_pretrained(settings.pretrained_scibert_path)
+    with torch.no_grad():
+        for i,(left_citated_text,right_citated_text) in enumerate(zip(df["left_citated_text"],df["right_citated_text"])):
+            left_citation_tokenized = tokenizer.tokenize(left_citated_text)
+            right_citation_tokenized = tokenizer.tokenize(right_citated_text)
+            input_tokens = tokenizer.convert_tokens_to_ids(left_citation_tokenized)+[tokenzier.sep_token_id]+tokenizer.convert_tokens_to_ids(right_citation_tokenized)
+            position_citation_mark = len(left_citation_tokenized)
+            tokens_tensor = torch.tensor([input_tokens])
+            outputs = model(tokens_tensor)
+            emb = np.array(outputs[0][position_citation_mark].cpu())
+            contexts.append(emb)
+        np.save(path_emb[:-4],contexts)
+    return contexts
 
+#scibert embeddingsを取り出すためのmatrixを作る
+#dict1: key: citing id value: second dict
+#second dict: key: cited id: value: the context embeddings from citing id to cited id
 def makecitationmatrix_PeerRead(path,path_emb,ent_vocab):
-    dict1 = {}
+    dict_scibert = {}
     df = pd.read_csv(path)
-    textemb = np.load(path_emb)
+    textemb = make_context_embeddings(df,path_emb)
     target_ids = df["target_id"]
     source_ids = df["source_id"]
     for i,(target_id,source_id) in enumerate(zip(target_ids,source_ids)):
         emb = textemb[i]
-        if ent_vocab[target_id] not in dict1:
-            dict1[ent_vocab[target_id]] = {ent_vocab[source_id]:emb}
+        if ent_vocab[target_id] not in dict_scibert:
+            dict_scibert[ent_vocab[target_id]] = {ent_vocab[source_id]:emb}
         else:
-            dict1[ent_vocab[target_id]][ent_vocab[source_id]] = emb
-    return dict1
+            dict_scibert[ent_vocab[target_id]][ent_vocab[source_id]] = emb
+    return dict_scibert
 
+#scibert embeddingsを取り出すためのmatrixを作る
+#dict1: key: citing id value: second dict
+#second dict: key: cited id: value: the context embeddings from citing id to cited id
 def makecitationmatrix_AASC(path,path_emb,ent_vocab):
-    dict1 = {}
+    dict_scibert = {}
     df = pd.read_csv(path,quotechar="'")
-    textemb = np.load(path_emb)
+    textemb = make_context_embeddings(df,path_emb)
     target_ids = df["target_id"]
     source_ids = df["source_id"]
     for i,(target_id,source_id) in enumerate(zip(target_ids,source_ids)):
         emb = textemb[i]
-        if ent_vocab[target_id] not in dict1:
-            dict1[ent_vocab[target_id]] = {ent_vocab[source_id]:emb}
+        if ent_vocab[target_id] not in dict_scibert:
+            dict_scibert[ent_vocab[target_id]] = {ent_vocab[source_id]:emb}
         else:
-            dict1[ent_vocab[target_id]][ent_vocab[source_id]] = emb
-    return dict1
+            dict_scibert[ent_vocab[target_id]][ent_vocab[source_id]] = emb
+    return dict_scibert
+
+def make_matrix(ent_vocab):
+    path = settings.citation_recommendation_dir
+    path_train = os.path.join(path,"train.csv")
+    path_test = os.path.join(path,"test.csv")
+    path_emb_train = os.path.join(path,"scibert_AASCtrain.npy")
+    path_emb_test = os.path.join(path,"scibert_AASCtest.npy")
+    matrix_train = makecitationmatrix_AASC(path_train,path_emb_train,ent_vocab)
+    matrix_test = makecitationmatrix_AASC(path_test,path_emb_test,ent_vocab)
+    matrix = matrix_train
+    for target_id in matrix_test:
+        if target_id in matrix:
+            for source_id in matrix_test[target_id]:
+                matrix[target_id][source_id] = matrix_test[target_id][source_id]
+        else:
+            matrix[target_id] = matrix_test[target_id]
+    return matrix
 
 class PeerReadDataSet(Dataset):
     def __init__(self, path, ent_vocab, MAX_LEN, matrix,mode="train"):
@@ -71,33 +113,6 @@ class PeerReadDataSet(Dataset):
     def __getitem__(self, item):
         return self.data[item]
 
-    def collate_fn(self, batch):
-        input_keys = ['target_ids','source_ids',"position_ids","contexts","token_type_ids","attention_masks","mask_positions"]
-        target_keys = ["target_ids","source_ids"]
-        max_words = self.MAX_LEN
-        batch_x = {n: [] for n in input_keys}
-        batch_y = {n: [] for n in target_keys}
-        
-        for sample in batch:
-            batch_x["position_ids"].append([0,1,2])
-            batch_x["token_type_ids"].append([1,0,1])
-            batch_x["target_ids"].append(sample["target_id"])
-            batch_x["source_ids"].append(sample["source_id"])
-            batch_x["contexts"].append(self.matrix[sample["target_id"]][sample["source_id"]])
-            batch_x["mask_positions"].append(sample["MASK_position"])
-            adj = torch.ones(3,3,dtype=torch.int)
-            batch_x["attention_masks"].append(adj)
-            batch_y["target_ids"].append(sample["target_id"])
-            batch_y["source_ids"].append(sample["source_id"])
-        for k, v in batch_x.items():
-            if k == 'attention_masks':
-                batch_x[k] = torch.stack(v, dim=0)
-            else:
-                batch_x[k] = torch.tensor(v)
-        for k, v in batch_y.items():
-            batch_y[k] = torch.tensor(v)
-        return (batch_x, batch_y)
-
 class AASCDataSet(Dataset):
     def __init__(self, path, ent_vocab, MAX_LEN, matrix,mode="train"):
         self.path = path
@@ -128,40 +143,9 @@ class AASCDataSet(Dataset):
     def __getitem__(self, item):
         return self.data[item]
 
-    def collate_fn(self, batch):
-        input_keys = ['target_ids','source_ids',"position_ids","token_type_ids","attention_masks","mask_positions","contexts","masked_lm_labels"]
-        target_keys = ["target_ids","source_ids"]
-        max_words = self.MAX_LEN
-        batch_x = {n: [] for n in input_keys}
-        batch_y = {n: [] for n in target_keys}
-        
-        for sample in batch:
-            batch_x["position_ids"].append([0,1,2])
-            batch_x["token_type_ids"].append([1,0,1])
-            batch_x["target_ids"].append(sample["target_id"])
-            batch_x["source_ids"].append(sample["source_id"])
-            batch_x["contexts"].append(self.matrix[sample["target_id"]][sample["source_id"]])
-            batch_x["mask_positions"].append(sample["MASK_position"])
-            if sample["MASK_position"] == 0:
-                batch_x["masked_lm_labels"].append(sample["target_id"])
-            else:
-                batch_x["masked_lm_labels"].append(sample["source_id"])
-            adj = torch.ones(3,3,dtype=torch.int)
-            batch_x["attention_masks"].append(adj)
-            batch_y["target_ids"].append(sample["target_id"])
-            batch_y["source_ids"].append(sample["source_id"])
-
-        for k, v in batch_x.items():
-            if k == 'attention_masks':
-                batch_x[k] = torch.stack(v, dim=0)
-            else:
-                batch_x[k] = torch.tensor(v)
-        for k, v in batch_y.items():
-            batch_y[k] = torch.tensor(v)
-        return (batch_x, batch_y)
 
 #入力: directory
-def load_PeerRead_graph_data(path,frequency,MAX_LEN):
+def load_PeerRead_graph_data(args):
     def extract_by_frequency(path_train, path_test,frequency):
         dftrain = pd.read_csv(path_train)
         dftest = pd.read_csv(path_test)
@@ -203,6 +187,7 @@ def load_PeerRead_graph_data(path,frequency,MAX_LEN):
         for i,entity in enumerate(entitylist):
             entvocab[entity] = i+2
         return path_train[:-4]+"_frequency"+str(frequency)+".csv",path_test[:-4]+"_frequency"+str(frequency)+".csv",entvocab
+    path = settings.citation_recommendation_dir
     path_train = os.path.join(path,"train.csv")
     path_test = os.path.join(path,"test.csv")
     path_emb_train = os.path.join(path,"scibert_PeerReadtrain.npy")
@@ -210,15 +195,15 @@ def load_PeerRead_graph_data(path,frequency,MAX_LEN):
     entvocab = build_ent_vocab(path_train,dataset="PeerRead")
     matrix_train = makecitationmatrix_PeerRead(path_train,path_emb_train,entvocab)
     matrix_test = makecitationmatrix_PeerRead(path_test,path_emb_test,entvocab)
-    path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,frequency)
-    dataset_train = PeerReadDataSet(path_train,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_train)
-    dataset_test = PeerReadDataSet(path_test,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_test,mode="test")
-    dataset_train_frequency5 = PeerReadDataSet(path_train_frequency5,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_train)
-    dataset_test_frequency5 = PeerReadDataSet(path_test_frequency5,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_test,mode="test")
+    path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,args.frequency)
+    dataset_train = PeerReadDataSet(path_train,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_train)
+    dataset_test = PeerReadDataSet(path_test,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_test,mode="test")
+    dataset_train_frequency5 = PeerReadDataSet(path_train_frequency5,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_train)
+    dataset_test_frequency5 = PeerReadDataSet(path_test_frequency5,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_test,mode="test")
     return dataset_train,dataset_test_frequency5,entvocab
 
 #入力: directory
-def load_AASC_graph_data(path,frequency,MAX_LEN):
+def load_AASC_graph_data(args):
     def extract_by_frequency(path_train, path_test,frequency):
         dftrain = pd.read_csv(path_train,quotechar="'")
         dftest = pd.read_csv(path_test,quotechar="'")
@@ -260,6 +245,7 @@ def load_AASC_graph_data(path,frequency,MAX_LEN):
         for i,entity in enumerate(entitylist):
             entvocab[entity] = i+2
         return path_train[:-4]+"_frequency"+str(frequency)+".csv",path_test[:-4]+"_frequency"+str(frequency)+".csv",entvocab
+    path = settings.citation_recommendation_dir
     path_train = os.path.join(path,"train.csv")
     path_test = os.path.join(path,"test.csv")
     path_emb_train = os.path.join(path,"scibert_AASCtrain.npy")
@@ -267,103 +253,18 @@ def load_AASC_graph_data(path,frequency,MAX_LEN):
     entvocab = build_ent_vocab(path_train)
     matrix_train = makecitationmatrix_AASC(path_train,path_emb_train,entvocab)
     matrix_test = makecitationmatrix_AASC(path_test,path_emb_test,entvocab)
-    path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,frequency)
-    dataset_train = AASCDataSet(path_train,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_train)
-    dataset_test = AASCDataSet(path_test,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_test,mode="test")
-    dataset_train_frequency5 = AASCDataSet(path_train_frequency5,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_train)
-    dataset_test_frequency5 = AASCDataSet(path_test_frequency5,ent_vocab=entvocab,MAX_LEN=MAX_LEN,matrix=matrix_test,mode="test")
-    return dataset_train,dataset_test_frequency5,entvocab
+    path_train_frequency5,path_test_frequency5,entvocab_frequency5 = extract_by_frequency(path_train,path_test,args.frequency)
+    if args.train_data == "full":
+        dataset_train = AASCDataSet(path_train,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_train)
+    else:
+        dataset_train = AASCDataSet(path_train_frequency5,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_train)
+    if args.test_data == "full":
+        dataset_test = AASCDataSet(path_test,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_test,mode="test")
+    else:
+        dataset_test = AASCDataSet(path_test_frequency5,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_test,mode="test")
+    #return dataset_train,dataset_test,entvocab
+    return dataset_train,dataset_test,entvocab,matrix_train,matrix_test
 
-#AASCのnode classificationデータを読み込む^
-def load_data_SVM(model,entvocab):
-    taskn = -1
-    taskdict = {}
-    ftrain = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_train.txt")
-    len1 = 0
-    for line in ftrain:
-        len1 += 1
-    ftrain = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_train.txt")
-    taskn = -1
-    X_train = []
-    y_train = []
-    with torch.no_grad():
-        for i,line in enumerate(ftrain):
-            l = line[:-1].split("\t")
-            paper = l[0]
-            task = l[1]
-            if task not in taskdict:
-                taskn += 1
-                taskdict[task] = taskn
-            if i % 1000 == 0:
-                print("all")
-                print(len1)
-                print(i)
-            target_ids = torch.tensor([entvocab[paper]])
-            position_ids = torch.tensor([[i for i in range(3)]])
-            token_type_ids = torch.tensor([[1] + [0]*2])
-            adj = torch.ones(1, 1, dtype=torch.int)
-            adj = torch.cat((adj,torch.ones(2,adj.shape[1],dtype=torch.int)),dim=0)
-            adj = torch.cat((adj,torch.zeros(3,2,dtype=torch.int)),dim=1)
-            outputs = model.get_embeddings(target_ids=target_ids.cuda(),position_ids=position_ids.cuda(),token_type_ids=token_type_ids.cuda(),attention_masks=adj.cuda())
-            entity_logits = outputs["sequence_output"][0][0]
-            X_train.append(np.array(entity_logits.cpu()))
-            y_train.append(taskdict[task])
-        ftest = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/title2task_test.txt")
-        X_test = []
-        y_test = []
-        for line in ftest:
-            l = line[:-1].split("\t")
-            paper = l[0]
-            task = l[1]
-            target_ids = torch.tensor([entvocab[paper]])
-            position_ids = torch.tensor([[i for i in range(3)]])
-            token_type_ids = torch.tensor([[1] + [0]*2])
-            adj = torch.ones(1, 1, dtype=torch.int)
-            adj = torch.cat((adj,torch.ones(2,adj.shape[1],dtype=torch.int)),dim=0)
-            adj = torch.cat((adj,torch.zeros(3,2,dtype=torch.int)),dim=1)
-            outputs = model.get_embeddings(target_ids=target_ids.cuda(),position_ids=position_ids.cuda(),token_type_ids=token_type_ids.cuda(),attention_masks=adj.cuda())
-            entity_logits = outputs["sequence_output"][0][0]
-            X_test.append(np.array(entity_logits.cpu()))
-            y_test.append(taskdict[task])
-    return X_train,y_train,X_test,y_test
-
-#AASCのintent identificationデータを読み込む
-def load_data_intent_identification(model,entvocab):
-    intentn = -1
-    intentdict = {}
-    f = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/id2intent.txt")
-    X = []
-    y = []
-    with torch.no_grad():
-        for i,line in enumerate(f):
-            l = line[:-1].split("\t")
-            if i == 0:
-                continue
-            target_id = l[0]
-            source_id = l[1]
-            intent = l[2]
-            if intent not in intentdict:
-                intentn += 1
-                intentdict[intent] = intentn
-            target_ids = torch.tensor([entvocab[target_id]])
-            position_ids = torch.tensor([[i for i in range(3)]])
-            token_type_ids = torch.tensor([[1] + [0]*2])
-            adj = torch.ones(1, 1, dtype=torch.int)
-            adj = torch.cat((adj,torch.ones(2,adj.shape[1],dtype=torch.int)),dim=0)
-            adj = torch.cat((adj,torch.zeros(3,2,dtype=torch.int)),dim=1)
-            outputs = model.get_embeddings(target_ids=target_ids.cuda(),position_ids=position_ids.cuda(),token_type_ids=token_type_ids.cuda(),attention_masks=adj.cuda())
-            target_logits = outputs["sequence_output"][0][0]
-            target_ids = torch.tensor([entvocab[source_id]])
-            position_ids = torch.tensor([[i for i in range(3)]])
-            token_type_ids = torch.tensor([[1] + [0]*2])
-            adj = torch.ones(1, 1, dtype=torch.int)
-            adj = torch.cat((adj,torch.ones(2,adj.shape[1],dtype=torch.int)),dim=0)
-            adj = torch.cat((adj,torch.zeros(3,2,dtype=torch.int)),dim=1)
-            outputs = model.get_embeddings(target_ids=target_ids.cuda(),position_ids=position_ids.cuda(),token_type_ids=token_type_ids.cuda(),attention_masks=adj.cuda())
-            source_logits = outputs["sequence_output"][0][0]
-            X.append(np.concatenate([np.array(target_logits.cpu()),np.array(source_logits.cpu())]))
-            y.append(intentdict[intent])
-    return X,y
 
 if __name__ == "__main__":
     path = "/home/ohagi_masaya/M1/TransBasedCitEmb/dataset/citationcontexts.txt"

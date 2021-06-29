@@ -24,13 +24,13 @@ def make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,tokenizer,ent_vocab,mask_position
     token_type_ids = []
     if mask_position == "cited":
         #append citing id
-        citationcontextl.extend([tokenizer.cls_token_id,ent_vocab[target_id],tokenizer.sep_token_id])
-        masked_ids.extend([-1,-1,-1])
-        position_ids.extend([0,1,2])
-        token_type_ids.extend([0,1,0])
+        citationcontextl.extend([tokenizer.cls_token_id])
+        masked_ids.extend([-1])
+        position_ids.extend([0])
+        token_type_ids.extend([0])
         #append citation context
         citationcontextl.extend(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab["MASK"]] + right_citation_tokenized[:WINDOW_SIZE])
-        position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
+        position_ids.extend([1+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
         masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [ent_vocab[source_id]] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
         token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
     else:

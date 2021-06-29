@@ -1,18 +1,21 @@
 name: py38
 channels:
   - huggingface
+  - pytorch
   - conda-forge
   - defaults
 dependencies:
   - _libgcc_mutex=0.1=main
   - blas=1.0=mkl
   - brotlipy=0.7.0=py38h27cfd23_1003
-  - ca-certificates=2021.1.19=h06a4308_0
+  - ca-certificates=2021.4.13=h06a4308_1
   - certifi=2020.12.5=py38h06a4308_0
   - cffi=1.14.4=py38h261ae71_0
   - chardet=4.0.0=py38h06a4308_1003
   - click=7.1.2=pyhd3eb1b0_0
   - cryptography=3.3.1=py38h3c74f83_0
+  - cuda90=1.0=h6433d27_0
+  - cudatoolkit=10.0.130=0
   - cycler=0.10.0=py38_0
   - dbus=1.13.18=hb2f20db_0
   - expat=2.2.10=he6710b0_2
@@ -50,10 +53,11 @@ dependencies:
   - mkl_fft=1.2.0=py38h23d657b_0
   - mkl_random=1.1.1=py38h0573a6f_0
   - ncurses=6.2=he6710b0_1
+  - ninja=1.10.2=hff7bd54_1
   - numpy=1.19.2=py38h54aff64_0
   - numpy-base=1.19.2=py38hfa32c7d_0
   - olefile=0.46=py_0
-  - openssl=1.1.1i=h27cfd23_0
+  - openssl=1.1.1k=h27cfd23_0
   - packaging=20.9=pyhd3eb1b0_0
   - pcre=8.44=he6710b0_0
   - pillow=8.1.0=py38he98fc37_0
@@ -67,6 +71,7 @@ dependencies:
   - python=3.8.5=hcff3b4d_0
   - python-dateutil=2.8.1=pyhd3eb1b0_0
   - python_abi=3.8=1_cp38
+  - pytorch=1.4.0=py3.8_cuda10.0.130_cudnn7.6.3_0
   - qt=5.9.7=h5867ecd_1
   - readline=8.1=h27cfd23_0
   - regex=2020.11.13=py38h27cfd23_0
@@ -80,24 +85,26 @@ dependencies:
   - sqlite=3.33.0=h62c20be_0
   - threadpoolctl=2.1.0=pyh5ca1d4c_0
   - tk=8.6.10=hbc83047_0
-  - tokenizers=0.9.4=py38_0
+  - torchvision=0.5.0=py38_cu100
   - tornado=6.1=py38h27cfd23_0
   - tqdm=4.56.0=pyhd3eb1b0_0
-  - transformers=4.2.2=pyh7b7c402_0
   - urllib3=1.26.3=pyhd3eb1b0_0
   - wheel=0.36.2=pyhd3eb1b0_0
   - xz=5.2.5=h7b6447c_0
   - zlib=1.2.11=h7b6447c_3
   - zstd=1.4.5=h9ceee32_0
   - pip:
+    - absl-py==0.12.0
     - blessings==1.7
     - blis==0.4.1
+    - cachetools==4.2.1
     - calmsize==0.1.3
     - catalogue==1.0.0
     - cymem==2.0.4
     - dataclasses==0.6
     - decorator==4.4.2
     - dgl==0.5.2
+    - dill==0.3.3
     - docopt==0.6.2
     - fastnlp==0.6.0
     - fitlog==0.9.13
@@ -105,26 +112,54 @@ dependencies:
     - future==0.18.2
     - gitdb==4.0.5
     - gitpython==3.1.11
+    - google-auth==1.28.1
+    - google-auth-oauthlib==0.4.4
     - gpustat==0.6.0
+    - grpcio==1.37.0
+    - imageio==2.9.0
     - itsdangerous==1.1.0
     - jinja2==2.11.2
+    - longformer==0.1
+    - markdown==3.3.4
     - markupsafe==1.1.1
     - murmurhash==1.0.4
     - networkx==2.5
+    - nlp==0.4.0
+    - nltk==3.6.1
     - nvidia-ml-py3==7.352.0
+    - oauthlib==3.1.0
     - pandas==1.1.4
     - plac==1.1.3
     - preshed==3.0.4
     - prettytable==2.0.0
     - psutil==5.7.3
+    - pyarrow==3.0.0
+    - pyasn1==0.4.8
+    - pyasn1-modules==0.2.8
+    - pytorch-lightning==0.8.5
     - pytorch-memlab==0.2.1
     - pytz==2020.1
+    - pyyaml==5.4.1
+    - requests-oauthlib==1.3.0
+    - rouge-score==0.0.4
+    - rsa==4.7.2
+    - seaborn==0.11.1
+    - sentencepiece==0.1.95
     - smmap==3.0.4
     - spacy==2.3.2
     - srsly==1.0.4
+    - tensorboard==2.4.1
+    - tensorboard-plugin-wit==1.8.0
+    - tensorboardx==2.2
+    - test-tube==0.7.5
     - thinc==7.4.1
-    - torch==1.7.0
+    - tokenizers==0.8.1rc2
+    - torch==1.6.0
+    - transformers==3.1.0
     - typing-extensions==3.7.4.3
     - wasabi==0.8.0
     - wcwidth==0.2.5
-prefix: /home/ohagi_masaya/anaconda3/envs/py38
+    - werkzeug==1.0.1
+    - xxhash==2.0.0
+prefix: /home/ohagi_masaya/.pyenv/versions/anaconda3-2019.10/envs/py38
+
