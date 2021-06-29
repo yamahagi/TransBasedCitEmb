@@ -262,7 +262,8 @@ def load_AASC_graph_data(args):
         dataset_test = AASCDataSet(path_test,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_test,mode="test")
     else:
         dataset_test = AASCDataSet(path_test_frequency5,ent_vocab=entvocab,MAX_LEN=args.MAX_LEN,matrix=matrix_test,mode="test")
-    return dataset_train,dataset_test,entvocab
+    #return dataset_train,dataset_test,entvocab
+    return dataset_train,dataset_test,entvocab,matrix_train,matrix_test
 
 
 if __name__ == "__main__":

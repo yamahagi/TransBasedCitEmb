@@ -1,7 +1,7 @@
 import pandas as pd
 from collections import defaultdict
 import random
-from transformers import RobertaTokenizer,BertTokenizer
+from transformers import RobertaTokenizer,BertTokenizer,BertModel
 from dataloader_CoKE import makecitationmatrix_AASC,make_matrix
 import torch
 import numpy as np
@@ -73,12 +73,8 @@ def load_raw_data():
                     head_all_number += 1
                     elements = [{"data":head_all_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_all_dict[paper].keys())]
                 else:
-                    print("aaa")
+                    print("Unfound: "+paper)
                 paper_dict[paper] = elements
-    print(tail5_number)
-    print(head5_number)
-    print(tail_all_number)
-    print(head_all_number)
     return X,y,paper_dict
 
 #それぞれの辞書をinput_idに変換
@@ -171,6 +167,37 @@ def load_data_intent_identification_with_context(model,ent_vocab,MAX_LEN,WINDOW_
     X = [(paper_embeddings_dict[target_id],paper_embeddings_dict[source_id]) for (target_id,source_id) in X]
     return X,y
 
+def load_data_intent_identification_scibert(ent_vocab,matrix_train,matrix_test):
+    f = open(os.path.join(settings.intent_identification_dir,"id2intent.txt"))
+    X = []
+    y = []
+    intentdict = {}
+    intentn = 0
+    with torch.no_grad():
+        model = BertModel.from_pretrained(settings.pretrained_scibert_path)
+        tokenizer = BertTokenizer.from_pretrained(settings.pretrained_scibert_path)
+        for i,line in enumerate(f):
+            if i == 0:
+                continue
+            l = line.split("\t")
+            target_id = l[0]
+            source_id = l[1]
+            intent = l[2]
+            left_citated_text = l[3]
+            right_citated_text = l[4]
+            left_citation_tokenized = tokenizer.tokenize(left_citated_text)[-250:]
+            right_citation_tokenized = tokenizer.tokenize(right_citated_text)[:250]
+            input_tokens = tokenizer.convert_tokens_to_ids(left_citation_tokenized)+[tokenizer.sep_token_id]+tokenizer.convert_tokens_to_ids(right_citation_tokenized)
+            position_citation_mark = len(left_citation_tokenized)
+            tokens_tensor = torch.tensor([input_tokens])
+            outputs = model(tokens_tensor)
+            emb = np.array(outputs[0][0][position_citation_mark].cpu())
+            if intent not in intentdict:
+                intentdict[intent] = intentn
+                intentn += 1
+            X.append(emb)
+            y.append(intentdict[intent])
+    return X,y
 
 if __name__ == "__main__":
     ent_vocab = build_ent_vocab("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/train.csv")

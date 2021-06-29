@@ -9,6 +9,7 @@ from torch import optim
 import torch.nn as nn
 from transformers import BertConfig, BertTokenizer, BertModel
 from dataloader_CoKE import load_AASC_graph_data,load_PeerRead_graph_data,make_matrix
+from load_intent_identification import load_data_intent_identification_scibert
 
 from metrics import Evaluation
 
@@ -159,6 +160,30 @@ class Collate_fn():
             batch_y[k] = torch.tensor(v)
         return (batch_x, batch_y)
 
+def plot_intent_identification(ent_vocab,matrix_train,matrix_test):
+    X,y = load_data_intent_identification_scibert(ent_vocab,matrix_train,matrix_test)
+    pca = PCA(n_components=2)
+    pca.fit(X)
+    X_visualization = pca.transform(X)
+    print("PCA done: " + str(len(X)))
+    print("Y length: " + str(len(y)))
+    print("Y distribution")
+    print(collections.Counter(y))
+    print("visualization start")
+    fig, ax = pyplot.subplots(figsize=(20,20))
+    X_colors = [[] for _ in range(max(y)+1)]
+    y_colors = [[] for _ in range(max(y)+1)]
+    colors_name = ["black","grey","tomato","saddlebrown","palegoldenrod","olivedrab","cyan","steelblue","midnightblue","darkviolet","magenta","pink","yellow"]
+    for x1,y1 in zip(X_visualization,y):
+        X_colors[y1].append(x1)
+        y_colors[y1].append(y1)
+    for X_color,color in zip(X_colors,colors_name[:len(y_colors)]):
+        X_color_x = np.array([X_place[0] for X_place in X_color])
+        X_color_y = np.array([X_place[1] for X_place in X_color])
+        ax.scatter(X_color_x,X_color_y,c=color)
+    pyplot.savefig("images/TransBasedCitEmb_intent_identification_scibert.png")
+
+
 def main():
     args = parse_args()
 
@@ -168,9 +193,12 @@ def main():
         print("GPU NO")
     
     if args.dataset == "AASC":
-        train_set, test_set, ent_vocab = load_AASC_graph_data(args)
+        #train_set, test_set, ent_vocab = load_AASC_graph_data(args)
+        train_set, test_set, ent_vocab,matrix_train,matrix_test = load_AASC_graph_data(args)
     else:
         train_set, test_set, ent_vocab = load_PeerRead_graph_data(args)
+    plot_intent_identification(ent_vocab,matrix_train,matrix_test)
+    sys.exit()
     num_ent = len(ent_vocab)
     if args.pretrained_model == "scibert":
         model = PTBCNCOKE.from_pretrained(settings.pretrained_scibert_path,num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN)

@@ -13,6 +13,10 @@ import pickle
 import settings
 import json
 
+#extract node classification data
+#for each node in node classification data, collect all contexts for that
+#if there is data whose tail node is what we want to collect, we collect all of them
+#else, we collect all data whose head node is what we want to collect
 def load_raw_data():
     dftrain5 = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train_frequency5.csv"),quotechar="'")
     dftrain = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train.csv"),quotechar="'")
@@ -94,7 +98,7 @@ def load_raw_data():
         y_test.append(taskdict[task])
     return X_train,y_train,X_test,y_test
 
-#それぞれの辞書をinput_idに変換
+#convert each node into input_id
 def convert_data(datas,ent_vocab,MAX_LEN,WINDOW_SIZE):
     tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
     converted_datas = []
@@ -110,20 +114,26 @@ def convert_data(datas,ent_vocab,MAX_LEN,WINDOW_SIZE):
             masked_ids = []
             position_ids = []
             token_type_ids = []
+            #mask head node
             if data["th"] == "head":
+                #append head node
                 citationcontextl.extend([tokenizer.cls_token_id,ent_vocab["MASK"],tokenizer.sep_token_id])
                 masked_ids.extend([-1,ent_vocab[target_id],-1])
                 position_ids.extend([0,1,2])
                 token_type_ids.extend([0,1,0])
+                #append citation context and tail node
                 citationcontextl.extend(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE])
                 position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
                 masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [ent_vocab[source_id]] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
                 token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
             else:
+                #mask tail node
+                #append head node
                 citationcontextl.extend([tokenizer.cls_token_id,ent_vocab[target_id],tokenizer.sep_token_id])
                 masked_ids.extend([-1,-1,-1])
                 position_ids.extend([0,1,2])
                 token_type_ids.extend([0,1,0])
+                #append citation context and tail node
                 citationcontextl.extend(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab["MASK"]] + right_citation_tokenized[:WINDOW_SIZE])
                 position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
                 masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [ent_vocab[source_id]] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
@@ -137,8 +147,8 @@ def convert_data(datas,ent_vocab,MAX_LEN,WINDOW_SIZE):
         converted_datas.append(converted_elements)
     return converted_datas
 
+#get average of context embeddings for each node
 def get_embeddings(model,datas,MAX_LEN,WINDOW_SIZE):
-    #それぞれのdataをモデルに入れてそのmaskedの場所のembeddingsを取得する
     X_embeddings = []
     loss_average = 0
     loss_fct = torch.nn.CrossEntropyLoss(ignore_index=-1)
@@ -157,27 +167,22 @@ def get_embeddings(model,datas,MAX_LEN,WINDOW_SIZE):
                 adj = torch.cat((adj,torch.ones(MAX_LEN-l,adj.shape[1],dtype=torch.int)),dim=0)
                 adj = torch.cat((adj,torch.zeros(MAX_LEN,MAX_LEN-l,dtype=torch.int)),dim=1)
                 output = model(input_ids=input_ids.cuda(),position_ids=position_ids.cuda(),token_type_ids=token_type_ids.cuda(),masked_lm_labels=masked_lm_labels.cuda(),attention_mask=torch.stack([adj],dim=0).cuda())
-                sequence_output = output["sequence_output"][0]
-                outputs_each_layer = output["outputs_each_layer"]
-                outputs_final_four = output["outputs_each_layer"][-1:]
+                outputs_final_layer = output["outputs_each_layer"][-1:]
                 for j,label in enumerate(data["masked_lm_labels"]):
                     if label != -1:
-                        for outputs_layer in outputs_final_four:
+                        for outputs_layer in outputs_final_layer:
                             X_elements.append(np.array(outputs_layer[0][j].cpu()))
                         X_label = label
                         break
-                #X_elements.append(np.array(sequence_output.cpu()))
                 loss_element += output['loss'].cpu().detach().item()
             embeddings_averaged = np.average(X_elements,axis=0)
             X_embeddings.append(embeddings_averaged)
-            averaged_tensor = torch.tensor([[embeddings_averaged]],device="cuda")
-            ent_logits = model.ent_lm_head(averaged_tensor)
-            target_tensor = torch.tensor([X_label],device="cuda")
             loss_average += loss_element/len(elements)
             if i % 1000 == 0:
                 print(i,loss_average/(i+1))
     return X_embeddings
 
+#get average of context embeddings for each node for all layers
 def get_embeddings_all_layer(model,datas,MAX_LEN,WINDOW_SIZE):
     #それぞれのdataをモデルに入れてそのmaskedの場所のembeddingsを取得する
     X_embeddings = []
@@ -220,6 +225,7 @@ def get_embeddings_all_layer(model,datas,MAX_LEN,WINDOW_SIZE):
                 print(i)
     return X_embeddings
 
+#get embeddings for each node by taking average of contexts
 def load_data_SVM_with_context(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
     X_train,y_train,X_test,y_test = load_raw_data()
     converted_path_train = os.path.join(settings.citation_recommendation_dir,"SVM_train.json")
@@ -242,6 +248,7 @@ def load_data_SVM_with_context(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
     X_test = get_embeddings(model,X_test,MAX_LEN,WINDOW_SIZE)
     return X_train,y_train,X_test,y_test
 
+#get embeddings for each node by taking average of contexts for all layer
 def load_data_SVM_with_context_all_layer(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
     X_train,y_train,X_test,y_test = load_raw_data()
     converted_path_train = os.path.join(settings.citation_recommendation_dir,"SVM_train.json")
@@ -264,6 +271,8 @@ def load_data_SVM_with_context_all_layer(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
     X_tests = get_embeddings_all_layer(model,X_test,MAX_LEN,WINDOW_SIZE)
     return X_trains,y_train,X_tests,y_test
 
+#get each node embeddings from feed forward network by gradient descent
+#currently unused
 def get_representative_embeddings(model,ent_vocab,paper):
     #feed forward layerを読み込んでfreeze
     feed_forward = model.ent_lm_head
@@ -285,6 +294,42 @@ def get_representative_embeddings(model,ent_vocab,paper):
         optimizer.step()
     return paper_tensor[0][0].detach().cpu().numpy()
 
+#load node classification data from feed forward linear layer
+def load_data_SVM_from_linear(model,ent_vocab):
+    taskn = -1
+    taskdict = {}
+    X_train = []
+    y_train = []
+    ftrain = open(os.path.join(settings.node_classification_dir,"title2task_train.txt"))
+    with torch.no_grad():
+        for i,line in enumerate(ftrain):
+            l = line[:-1].split("\t")
+            paper = l[0]
+            task = l[1]
+            if task not in taskdict:
+                taskn += 1
+                taskdict[task] = taskn
+            emb = np.array(model.ent_lm_head.decoder.weight[ent_vocab[paper]].cpu())
+            X_train.append(emb)
+            y_train.append(taskdict[task])
+            if i % 1000 == 0:
+                print(i)
+        ftest = open(os.path.join(settings.node_classification_dir,"title2task_test.txt"))
+        X_test = []
+        y_test = []
+        path_emb_test = os.path.join(settings.node_classification_dir,"paper_emb_dict_test_CrossEntropyLoss.binaryfile")
+        for i,line in enumerate(ftest):
+            l = line[:-1].split("\t")
+            paper = l[0]
+            task = l[1]
+            emb = np.array(model.ent_lm_head.decoder.weight[ent_vocab[paper]].cpu())
+            X_test.append(emb)
+            y_test.append(taskdict[task])
+            if i % 1000 == 0:
+                print(i)
+    return X_train,y_train,X_test,y_test
+
+#load node classification data from feed forward neural network
 def load_data_SVM_from_feedforward(model,ent_vocab):
     taskn = -1
     taskdict = {}
@@ -343,8 +388,7 @@ def load_data_SVM_from_feedforward(model,ent_vocab):
     pickle.dump(paper_dict_test,fwte)
     return X_train,y_train,X_test,y_test
 
-
-#AASCのnode classificationデータを読み込む
+#load node classification data from AASC
 def load_data_SVM(model,ent_vocab):
     ftrain = open(os.path.join(settings.node_classification_dir,"title2task_train.txt"))
     taskn = -1
@@ -374,6 +418,7 @@ def load_data_SVM(model,ent_vocab):
             y_test.append(taskdict[task])
     return X_train,y_train,X_test,y_test
 
+#get average of context embeddings for each node from three-length sequences model
 def get_embeddings_COKE(model,datas,ent_vocab,matrix):
     #それぞれのdataをモデルに入れてそのmaskedの場所のembeddingsを取得する
     X_embeddings = []
@@ -408,12 +453,12 @@ def get_embeddings_COKE(model,datas,ent_vocab,matrix):
             averaged_tensor = torch.tensor([[embeddings_averaged]],device="cuda")
             ent_logits = model.ent_lm_head(averaged_tensor)
             target_tensor = torch.tensor([X_label],device="cuda")
-            #loss_average += loss_fct(ent_logits[0],target_tensor).cpu().detach().item()
             loss_average += loss_element/len(elements)
             if i % 1000 == 0:
                 print(loss_average/(i+1))
     return X_embeddings
 
+#load node classificaton data of model with 3-length sequences
 def load_data_SVM_COKE(model,ent_vocab):
     X_train,y_train,X_test,y_test = load_raw_data()
     matrix = make_matrix(ent_vocab)
