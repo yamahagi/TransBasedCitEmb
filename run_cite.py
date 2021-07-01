@@ -1,5 +1,5 @@
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import sys
 
 import argparse
@@ -41,7 +41,7 @@ def parse_args():
     parser.add_argument('--dataset', type=str, default='AASC',help="AASC or PeerRead")
     parser.add_argument('--batch_size', type=int, default=16, help="batch size")
     parser.add_argument('--frequency', type=int, default=5, help="frequency to remove rare entity")
-    parser.add_argument('--lr', type=float, default=5e-5, help="learning rate")
+    parser.add_argument('--lr', type=float, default=1e-4, help="learning rate")
     parser.add_argument('--epoch', type=int, default=5, help="number of epochs")
     parser.add_argument('--WINDOW_SIZE', type=int, default=125, help="the length of context length")
     parser.add_argument('--MAX_LEN', type=int, default=256, help="MAX length of the input")
@@ -316,7 +316,7 @@ def main():
                     loss.backward()
                     optimizer.step()
                     pbar.set_postfix(collections.OrderedDict(loss=loss.detach().cpu().numpy()))
-            if epoch % 2 == 0 or epoch == args.epoch:
+            if epoch % 3 == 0 or epoch == args.epoch:
                 #save model
                 model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".bin"
                 torch.save(model.state_dict(),os.path.join(settings.model_path,model_name))
