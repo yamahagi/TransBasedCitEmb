@@ -37,6 +37,8 @@ from transformers import BertForSequenceClassification, AdamW, BertConfig
 import math
 import settings
 
+from collections import defaultdict
+
 
 #あまりにcitation intent identificationがうまくいかないので元データを確かめてみようという試み
 #とりあえず元データに対するscibertを用いたtrainとそれに対する評価を行う
@@ -62,11 +64,14 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_data_intent_identification():
+def load_data_intent_identification(textdict):
     intentn = -1
     intentdict = {}
     tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
     f = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/train.jsonl")
+    X_AASC_input_ids = []
+    X_AASC_attention_masks = []
+    y_AASC = []
     X_train_input_ids = []
     X_train_attention_masks = []
     y_train = []
@@ -93,9 +98,14 @@ def load_data_intent_identification():
                         return_attention_mask = True,   # Attention maksの作成
                         return_tensors = 'pt',     #  Pytorch tensorsで返す
                    )
-            X_train_input_ids.append(encoded_dict['input_ids'])
-            X_train_attention_masks.append(encoded_dict['attention_mask'])
-            y_train.append(intentdict[intent])
+            if text in textdict and (textdict[text][0] == target_id and textdict[text][1] == source_id):
+                X_AASC_input_ids.append(encoded_dict['input_ids'])
+                X_AASC_attention_masks.append(encoded_dict['attention_mask'])
+                y_AASC.append(intentdict[intent])
+            else:
+                X_train_input_ids.append(encoded_dict['input_ids'])
+                X_train_attention_masks.append(encoded_dict['attention_mask'])
+                y_train.append(intentdict[intent])
     X_train_input_ids = torch.cat(X_train_input_ids,dim=0)
     X_train_attention_masks = torch.cat(X_train_attention_masks,dim=0)
     f = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/test.jsonl")
@@ -125,59 +135,74 @@ def load_data_intent_identification():
                         return_attention_mask = True,   # Attention maksの作成
                         return_tensors = 'pt',     #  Pytorch tensorsで返す
                    )
-            X_test_input_ids.append(encoded_dict['input_ids'])
-            X_test_attention_masks.append(encoded_dict['attention_mask'])
-            y_test.append(intentdict[intent])
+            if text in textdict and (textdict[text][0] == target_id and textdict[text][1] == source_id):
+                X_AASC_input_ids.append(encoded_dict['input_ids'])
+                X_AASC_attention_masks.append(encoded_dict['attention_mask'])
+                y_AASC.append(intentdict[intent])
+            else:
+                X_test_input_ids.append(encoded_dict['input_ids'])
+                X_test_attention_masks.append(encoded_dict['attention_mask'])
+                y_test.append(intentdict[intent])
     X_test_input_ids = torch.cat(X_test_input_ids,dim=0)
     X_test_attention_masks = torch.cat(X_test_attention_masks,dim=0)
-    return X_train_input_ids,X_train_attention_masks,y_train,X_test_input_ids,X_test_attention_masks,y_test
+    X_AASC_input_ids = torch.cat(X_AASC_input_ids,dim=0)
+    X_AASC_attention_masks = torch.cat(X_AASC_attention_masks,dim=0)
+    return X_train_input_ids,X_train_attention_masks,y_train,X_test_input_ids,X_test_attention_masks,y_test,X_AASC_input_ids,X_AASC_attention_masks,y_AASC
 
 def load_data_intent_identification_AASC():
     intentn = -1
     intentdict = {}
+    textdict = {}
     f = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/id2intent.txt")
     X = []
     y = []
+    paperdict = defaultdict(dict)
     for i,line in enumerate(f):
         if i == 0:
             continue
-        l = line.rstrip("\n").split()
+        l = line.rstrip("\n").split("\t")
         target_id = l[0]
         source_id = l[1]
         intent = l[2]
-        left_citated_text = l[3]
-        right_citated_text = l[4]
+        text = l[3]
         if intent not in intentdict:
             intentn += 1
             intentdict[intent] = intentn
-        X.append({"left_citated_text":left_citated_text,"right_citated_text":right_citated_text})
+        X.append({"target_id":target_id,"source_id":source_id,"text":text})
+        paperdict[target_id][source_id] = intent
+        textdict[text] = (target_id,source_id)
         y.append(intentdict[intent])
-    return X,y
+    return X,y,textdict
 
-def plot_intent_identification(X_train_input_ids,X_train_attention_masks,y_train,X_test_input_ids,X_test_attention_masks,y_test,model):
+def plot_intent_identification(X_AASC_input_ids,X_AASC_attention_masks,y_AASC,model):
     X = []
     y = []
+    i = 0
     with torch.no_grad():
+        """
         for input_ids,attention_masks,label in zip(X_train_input_ids,X_train_attention_masks,y_train):
             input_ids = input_ids.unsqueeze(0)
             attention_masks = attention_masks.unsqueeze(0)
             y.append(label)
             label = torch.tensor([label])
-            outputs = model(input_ids=input_ids,attention_mask=attention_masks,labels=label)
-            X.append(np.array(outputs["hidden_states"][0][0][0].cpu()))
-        for input_ids,attention_masks,label in zip(X_test_input_ids,X_test_attention_masks,y_test):
+            outputs = model(input_ids=input_ids.cuda(),attention_mask=attention_masks.cuda(),labels=label.cuda())
+            X.append(np.array(outputs["hidden_states"][-1][0][0].cpu()))
+        """
+        for input_ids,attention_masks,label in zip(X_AASC_input_ids,X_AASC_attention_masks,y_AASC):
             input_ids = input_ids.unsqueeze(0)
             attention_masks = attention_masks.unsqueeze(0)
             y.append(label)
             label = torch.tensor([label])
-            outputs = model(input_ids=input_ids,attention_mask=attention_masks,labels=label)
-            X.append(np.array(outputs["hidden_states"][0][0][0].cpu()))
+            outputs = model(input_ids=input_ids.cuda(),attention_mask=attention_masks.cuda(),labels=label.cuda())
+            X.append(np.array(outputs["hidden_states"][-1][0][0].cpu()))
         print("intent identification data load done")
         print("PCA start")
         pca = PCA(n_components=2)
         pca.fit(X)
         X_visualization = pca.transform(X)
+        print(X_visualization[:3])
         print("PCA done: " + str(len(X)))
+        print(len(X_visualization))
         print("Y length: " + str(len(y)))
         print("Y distribution")
         print(collections.Counter(y))
@@ -193,7 +218,7 @@ def plot_intent_identification(X_train_input_ids,X_train_attention_masks,y_train
             X_color_x = np.array([X_place[0] for X_place in X_color])
             X_color_y = np.array([X_place[1] for X_place in X_color])
             ax.scatter(X_color_x,X_color_y,c=color)
-        pyplot.savefig("images/TransBasedCitEmb_intent_identification_scibert.png") # 保存
+        pyplot.savefig("images/TransBasedCitEmb_intent_identification_scibert_AASC_before.png") # 保存
 
 
 class ACLARCDataset(torch.utils.data.Dataset):
@@ -214,12 +239,15 @@ class ACLARCDataset(torch.utils.data.Dataset):
 
 def main():
     args = parse_args()
-    X_train_input_ids,X_train_attention_masks,y_train,X_test_input_ids,X_test_attention_masks,y_test = load_data_intent_identification()
+    X,y,textdict = load_data_intent_identification_AASC()
+    X_train_input_ids,X_train_attention_masks,y_train,X_test_input_ids,X_test_attention_masks,y_test,X_AASC_input_ids,X_AASC_attention_masks,y_AASC = load_data_intent_identification(textdict)
     train_set = ACLARCDataset(X_train_input_ids,X_train_attention_masks,y_train)
     test_set = ACLARCDataset(X_test_input_ids,X_test_attention_masks,y_test)
+    AASC_set = ACLARCDataset(X_AASC_input_ids,X_AASC_attention_masks,y_AASC)
     print("distributions of intent")
     print(collections.Counter(y_train))
     print(collections.Counter(y_test))
+    print(len(X_AASC_input_ids))
     num_label = max(y_train+y_test)+1
     model = BertForSequenceClassification.from_pretrained(
         "../pretrainedmodel/scibert_scivocab_uncased", # Use the 12-layer BERT model, with an uncased vocab.
@@ -231,9 +259,10 @@ def main():
                   lr = 5e-6, # args.learning_rate - default is 5e-5, our notebook had 2e-5
                   eps = 1e-8 # args.adam_epsilon  - default is 1e-8.
                 )
-    plot_intent_identification(X_train_input_ids,X_train_attention_masks,y_train,X_test_input_ids,X_test_attention_masks,y_test,model)
     train_dataloader = torch.utils.data.DataLoader(train_set, batch_size = args.batch_size, shuffle = True, num_workers = os.cpu_count()//2)
     model.cuda()
+    plot_intent_identification(X_AASC_input_ids,X_AASC_attention_masks,y_AASC,model)
+    sys.exit()
     model.train()
     for epoch_i in range(0, args.epoch):
         total_train_loss = 0
@@ -253,12 +282,13 @@ def main():
         avg_train_loss = total_train_loss / len(train_dataloader)
         if epoch_i % 5 == 0:
             print(avg_train_loss)
+    plot_intent_identification(X_AASC_input_ids,X_AASC_attention_masks,y_AASC,model)
     total_eval_accuracy = 0
     total_eval_loss = 0
     pred = []
     seikail = []
     model.eval()
-    test_dataloader = torch.utils.data.DataLoader(test_set, batch_size = args.batch_size, shuffle = False, num_workers = os.cpu_count()//2)
+    test_dataloader = torch.utils.data.DataLoader(AASC_set, batch_size = args.batch_size, shuffle = False, num_workers = os.cpu_count()//2)
     with torch.no_grad():
         for batch in test_dataloader:
             b_input_ids = batch[0].cuda()
