@@ -1,5 +1,5 @@
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 import sys
 
 import argparse
@@ -41,7 +41,7 @@ def parse_args():
     parser.add_argument('--dataset', type=str, default='AASC',help="AASC or PeerRead")
     parser.add_argument('--batch_size', type=int, default=16, help="batch size")
     parser.add_argument('--frequency', type=int, default=5, help="frequency to remove rare entity")
-    parser.add_argument('--lr', type=float, default=1e-4, help="learning rate")
+    parser.add_argument('--lr', type=float, default=5e-5, help="learning rate")
     parser.add_argument('--epoch', type=int, default=5, help="number of epochs")
     parser.add_argument('--WINDOW_SIZE', type=int, default=125, help="the length of context length")
     parser.add_argument('--MAX_LEN', type=int, default=256, help="MAX length of the input")
@@ -295,6 +295,7 @@ def main():
         model = PTBCN.from_pretrained('bert-base-uncased',num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN,final_layer=args.final_layer,loss_type=args.loss_type)
     model.change_type_embeddings()
     model.cuda()
+    model.train()
     print('parameters of SciBERT has been loaded.')
 
     # fine-tune
