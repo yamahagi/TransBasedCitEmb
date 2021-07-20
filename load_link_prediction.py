@@ -21,8 +21,6 @@ def load_raw_data():
     dftrain5 = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train_frequency5.csv"),quotechar="'")
     dftrain = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train.csv"),quotechar="'")
     dftest = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"test.csv"),quotechar="'")
-    ftrain = open(os.path.join(settings.node_classification_dir,"title2task_train.txt"))
-    ftest = open(os.path.join(settings.node_classification_dir,"title2task_test.txt"))
     tail_train5_dict = defaultdict(dict)
     head_train5_dict = defaultdict(dict)
     tail_all_dict = defaultdict(dict)
@@ -41,69 +39,40 @@ def load_raw_data():
         head_all_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
         both_all_dict[source_id][target_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
         both_all_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
-    tail5_number = 0
-    head5_number = 0
-    tailall_number = 0
-    headall_number = 0
-    bothall_number = 0
-    X_train = []
-    y_train = []
-    taskdict = {}
-    taskn = -1
-    alln = 0
-    for line in ftrain:
-        alln += 1
-        l = line[:-1].split("\t")
-        paper = l[0]
-        task = l[1]
-        elements = []
-        if paper in tail_train5_dict and tail_train5_dict[paper] != {}:
-            tail5_number += 1
-            elements = [{"data":tail_train5_dict[paper][target_id],"target_id":target_id,"source_id":paper,"th":"tail"} for target_id in list(tail_train5_dict[paper].keys())]
-        elif paper in head_train5_dict and head_train5_dict[paper] != {}:
-            head5_number += 1
-            elements = [{"data":head_train5_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_train5_dict[paper].keys())]
-        X_train.append(elements)
-        if task not in taskdict:
-            taskn += 1
-            taskdict[task] = taskn
-        y_train.append(taskdict[task])
-    tail5_number = 0
-    head5_number = 0
-    tailall_number = 0
-    headall_number = 0
-    bothall_number = 0
-    alln = 0
-    X_test = []
-    y_test = []
-    th = "tail"
-    for line in ftest:
-        alln += 1
-        l = line[:-1].split("\t")
-        paper = l[0]
-        task = l[1]
-        elements = []
-        #paperがtail_train5_dictに入っている
-        #tail or headどちらに取り出すべきembeddingsが入っているかをthで指し示している
-        if paper in tail_train5_dict and tail_train5_dict[paper] != {}:
-            tail5_number += 1
-            elements = [{"data":tail_train5_dict[paper][target_id],"target_id":target_id,"source_id":paper,"th":"tail"} for target_id in list(tail_train5_dict[paper].keys())]
-        elif paper in head_train5_dict and head_train5_dict[paper] != {}:
-            head5_number += 1
-            elements = [{"data":head_train5_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_train5_dict[paper].keys())]
-        X_test.append(elements)
-        if task not in taskdict:
-            taskn += 1
-            taskdict[task] = taskn
-        y_test.append(taskdict[task])
-    return X_train,y_train,X_test,y_test
+    paper_dict = {}
+    for i,target_id in enumerate(dftrain["target_id"]):
+        if target_id not in paper_dict:
+            if target_id in tail_train5_dict:
+                paper_dict[target_id] = [{"data":tail_train5_dict[target_id][paper],"target_id":target_id,"source_id":paper,"th":"tail"} for paper in list(tail_train5_dict[target_id].keys())]
+            elif target_id in head_train5_dict:
+                paper_dict[target_id] = [{"data":head_train5_dict[target_id][paper],"target_id":paper,"source_id":target_id,"th":"head"} for paper in list(head_train5_dict[target_id].keys())]
+            elif target_id in tail_all_dict:
+                paper_dict[target_id] = [{"data":tail_all_dict[target_id][paper],"target_id":target_id,"source_id":paper,"th":"tail"} for paper in list(tail_all_dict[target_id].keys())]
+            elif target_id in head_all_dict:
+                paper_dict[target_id] = [{"data":head_all_dict[target_id][paper],"target_id":paper,"source_id":target_id,"th":"head"} for paper in list(head_all_dict[target_id].keys())]
+            else:
+                print("aaa")
+    for i,source_id in enumerate(dftrain["source_id"]):
+        if source_id not in paper_dict:
+            if source_id in tail_train5_dict:
+                paper_dict[source_id] = [{"data":tail_train5_dict[source_id][paper],"target_id":source_id,"source_id":paper,"th":"tail"} for paper in list(tail_train5_dict[source_id].keys())]
+            elif source_id in head_train5_dict:
+                paper_dict[source_id] = [{"data":head_train5_dict[source_id][paper],"target_id":paper,"source_id":source_id,"th":"head"} for paper in list(head_train5_dict[source_id].keys())]
+            elif source_id in tail_all_dict:
+                paper_dict[source_id] = [{"data":tail_all_dict[source_id][paper],"target_id":source_id,"source_id":paper,"th":"tail"} for paper in list(tail_all_dict[source_id].keys())]
+            elif source_id in head_all_dict:
+                paper_dict[source_id] = [{"data":head_all_dict[source_id][paper],"target_id":paper,"source_id":source_id,"th":"head"} for paper in list(head_all_dict[source_id].keys())]
+            else:
+                print("aaa")
+    return paper_dict
 
 #convert each node into input_id
-def convert_data(datas,ent_vocab,MAX_LEN,WINDOW_SIZE):
+def convert_data(paper_dict,ent_vocab,MAX_LEN,WINDOW_SIZE):
     tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
-    converted_datas = []
+    converted_paper_dict = {}
     converted_elements = []
-    for i,elements in enumerate(datas):
+    for i,paper_id in enumerate(paper_dict):
+        elements = paper_dict[paper_id]
         converted_elements = []
         for data in elements:
             target_id = data["target_id"]
@@ -144,16 +113,17 @@ def convert_data(datas,ent_vocab,MAX_LEN,WINDOW_SIZE):
                 'position_ids': position_ids[:MAX_LEN],
                 'token_type_ids': token_type_ids[:MAX_LEN],
             })
-        converted_datas.append(converted_elements)
-    return converted_datas
+        converted_paper_dict[paper_id] = converted_elements
+    return converted_paper_dict
 
 #get average of context embeddings for each node
-def get_embeddings(model,datas,MAX_LEN,WINDOW_SIZE):
-    X_embeddings = []
+def get_embeddings(model,paper_dict,MAX_LEN,WINDOW_SIZE):
+    paper_embeddings_dict = {}
     loss_average = 0
     loss_fct = torch.nn.CrossEntropyLoss(ignore_index=-1)
     with torch.no_grad():
-        for i,elements in enumerate(datas):
+        for i,paper_id in enumerate(paper_dict):
+            elements = paper_dict[paper_id]
             X_elements = []
             X_label = -1
             loss_element = 0
@@ -176,11 +146,11 @@ def get_embeddings(model,datas,MAX_LEN,WINDOW_SIZE):
                         break
                 loss_element += output['loss'].cpu().detach().item()
             embeddings_averaged = np.average(X_elements,axis=0)
-            X_embeddings.append(embeddings_averaged)
+            paper_embeddings_dict[paper_id] = embeddings_averaged
             loss_average += loss_element/len(elements)
             if i % 1000 == 0:
                 print(i,loss_average/(i+1))
-    return X_embeddings
+    return paper_embeddings_dict
 
 def load_link_prediction(ent_vocab):
     #test_pathからそれぞれのnodeをkeyとしてciteされたnodeのlistをvalueとしたdictを読み込む
@@ -217,12 +187,25 @@ def load_data_link_prediction_with_context(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
 
 #paper embeddingsのpathを引数とする
 #entity2idのpathも引数とする
-def link_prediction(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
+def save_embeddings(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
     #link predictionのデータを読み込む
-    #-> それぞれのnodeをkeyとしてciteされたnodeのlistをvalueとしたdictを読み込む
-    link_dict = load_link_prediction(ent_vocab)
     #それぞれのnodeのembeddingsを読み込む
-    paper_embeddings = load_data_link_prediction_with_context(ent_vocab,model)
+    print("----loading data----")
+    paper_dict = load_raw_data()
+    print("----converting data----")
+    paper_dict = convert_data(paper_dict,ent_vocab,MAX_LEN,WINDOW_SIZE)
+    print("----making embeddings----")
+    paper_embeddings_dict = get_embeddings(model,paper_dict,MAX_LEN,WINDOW_SIZE)
+    print("----saving embeddings----")
+    with open("./AASC_embeddings.pkl", "wb") as tf:
+        pickle.dump(paper_embeddings_dict,tf)
+    print("----loading embeddings----")
+    with open("./AASC_embeddings.pkl","rb") as tf:
+        paper_embeddings_dict = pickle.load(tf)
+
+def link_prediction(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
+    #save embeddings
+    link_dict = load_link_prediction(ent_vocab)
     #dict内のkeyごとにfaissを用いて1001までnodeを最近傍探索
     query_embeddings = []
     y_true = []

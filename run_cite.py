@@ -33,6 +33,8 @@ import pandas as pd
 import csv
 import settings
 
+from load_link_prediction import save_embeddings
+
 
 #pathはsettings.pyで管理
 #それ以外のhyper parameterをargsで管理
@@ -328,8 +330,9 @@ def main():
             model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".bin"
             model.load_state_dict(torch.load(os.path.join(settings.model_path,model_name)))
             model.eval()
-            predict(args,epoch,model,ent_vocab,test_set)
-            node_classification(args,epoch,model,ent_vocab)
+            save_embeddings(model,ent_vocab,args.MAX_LEN,args.WINDOW_SIZE)
+            #predict(args,epoch,model,ent_vocab,test_set)
+            #node_classification(args,epoch,model,ent_vocab)
             #intent_identification(args,epoch,model,ent_vocab)
 
 
