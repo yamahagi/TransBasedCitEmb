@@ -65,7 +65,7 @@ def make_json(df,jsonpath,tokenizer):
 
 
 class PeerReadDataSet(Dataset):
-    def __init__(self, path, ent_vocab, WINDOW_SIZE, MAX_LEN, pretrained_model):
+    def __init__(self, path, ent_vocab, WINDOW_SIZE, MAX_LEN, pretrained_model,mode="train"):
         self.path = path
         self.dirname = os.path.dirname(path)
         self.filename = os.path.basename(path)
@@ -220,16 +220,18 @@ def load_PeerRead_graph_data(args):
             wtest.writerow([target_id,left_citated_text,right_citated_text,source_id])
         ftest_fre.close()
         entitylist = list(set(list(dftrain["source_id"].values) + list(dftrain["target_id"].values) + list(dftest["source_id"].values) + list(dftest["target_id"].values)))
+        entitylist.sort()
         ent_vocab = {"UNKNOWN":0,"MASK":1}
         for i,entity in enumerate(entitylist):
             ent_vocab[entity] = i+2
         return path_train[:-4]+"_frequency"+str(frequency)+".csv",path_test[:-4]+"_frequency"+str(frequency)+".csv",ent_vocab
-    path = settings.citation_recommendation_dir
+    path = settings.citation_recommendation_PeerRead_dir
     path_train = os.path.join(path,"train.csv")
     path_test = os.path.join(path,"test.csv")
-    ent_vocab = build_ent_vocab(path_train)
+    ent_vocab = build_ent_vocab(path_train,dataset=args.dataset)
     path_train_frequency5,path_test_frequency5,ent_vocab_frequency5 = extract_by_frequency(path_train,path_test,args.frequency)
-    datasetdict = {"tail":PeerReadDataSet,"random":PeerReadDataSetRANDOM,"both":PeerReadDataSetBOTH}
+    #datasetdict = {"tail":PeerReadDataSet,"random":PeerReadDataSetRANDOM,"both":PeerReadDataSetBOTH}
+    datasetdict = {"tail":PeerReadDataSet}
     cur_dataset = datasetdict[args.mask_type]
     if args.train_data == "full":
         dataset_train = cur_dataset(path_train,ent_vocab=ent_vocab,WINDOW_SIZE=args.WINDOW_SIZE,MAX_LEN=args.MAX_LEN,pretrained_model=args.pretrained_model,mode="train")
@@ -239,7 +241,7 @@ def load_PeerRead_graph_data(args):
         dataset_test = cur_dataset(path_test,ent_vocab=ent_vocab,WINDOW_SIZE=args.WINDOW_SIZE,MAX_LEN=args.MAX_LEN,pretrained_model=args.pretrained_model,mode="test")
     else:
         dataset_test = cur_dataset(path_test_frequency5,ent_vocab=ent_vocab,WINDOW_SIZE=args.WINDOW_SIZE,MAX_LEN=args.MAX_LEN,pretrained_model=args.pretrained_model,mode="test")
-    return dataset_train,dataset_test_frequency5,ent_vocab
+    return dataset_train,dataset_test,ent_vocab
 
 #入力: directory
 def load_AASC_graph_data(args):

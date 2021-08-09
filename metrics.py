@@ -1,9 +1,11 @@
 import torch
 from fastNLP.core.metrics import MetricBase
 from fastNLP.core.utils import _get_func_signature
+from fastNLP.core.utils import _get_func_signature
 from sklearn.metrics import f1_score, precision_recall_fscore_support
 import numpy as np
 import time
+import settings
 
 
 
@@ -59,7 +61,7 @@ def RecallatK(ent_preds,seikail):
     Rat80 /= len(seikail)
     return Rat5,Rat10,Rat30,Rat50,Rat80
 
-def Evaluation(ent_logits_batch,masked_lm_labels_batch):
+def Evaluation(ent_logits_batch,masked_lm_labels_batch,source_times_dict,score_per_times):
     ans = 0
     mrr = 0
     MAP = 0
@@ -68,6 +70,7 @@ def Evaluation(ent_logits_batch,masked_lm_labels_batch):
     recallat10 = 0
     recallat30 = 0
     recallat50 = 0
+    true_labels = []
     for ent_logits,masked_lm_labels in zip(ent_logits_batch,masked_lm_labels_batch):
         for i,masked_lm_label in enumerate(masked_lm_labels):
             if masked_lm_label != -1:
@@ -77,6 +80,7 @@ def Evaluation(ent_logits_batch,masked_lm_labels_batch):
         rank_array = list(rank_array)[::-1]
         if ans not in rank_array[:5000]:
             l += 1
+            score_per_times[source_times_dict[ans.item()]].append(0)
             continue
         rank = list(rank_array).index(ans)+1
         mrr += 1/rank
@@ -91,7 +95,8 @@ def Evaluation(ent_logits_batch,masked_lm_labels_batch):
         if rank <= 50:
             recallat50 += 1
         l += 1
-    return MAP,mrr,recallat5,recallat10,recallat30,recallat50,l
+        score_per_times[source_times_dict[ans.item()]].append(1/rank)
+    return MAP,mrr,recallat5,recallat10,recallat30,recallat50,l,score_per_times
 
 def RecallatK(ent_logits_batch,masked_lm_labels_batch):
     ans = 0

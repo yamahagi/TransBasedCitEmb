@@ -12,13 +12,12 @@ from transformers import BertConfig, BertTokenizer, BertForMaskedLM
 sys.path.append('../')
 from model import PTBCN
 from metrics import Evaluation
-from utils import build_ent_vocab,count_times
+from utils import build_ent_vocab
 from dataloader import load_AASC_graph_data,load_PeerRead_graph_data
 from load_node_classification import load_data_SVM_with_context,load_data_SVM_from_feedforward,load_data_SVM_with_context_all_layer,load_data_SVM_from_linear
 from load_intent_identification import load_data_intent_identification_with_context
 from itertools import product
 import collections
-from collections import defaultdict
 from tqdm import tqdm
 import random
 import pickle
@@ -45,7 +44,7 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=16, help="batch size")
     parser.add_argument('--frequency', type=int, default=5, help="frequency to remove rare entity")
     parser.add_argument('--lr', type=float, default=5e-5, help="learning rate")
-    parser.add_argument('--epoch', type=int, default=20, help="number of epochs")
+    parser.add_argument('--epoch', type=int, default=10, help="number of epochs")
     parser.add_argument('--WINDOW_SIZE', type=int, default=125,choices=[125,250], help="the length of context length")
     parser.add_argument('--MAX_LEN', type=int, default=256,choices=[256,512], help="MAX length of the input")
     parser.add_argument('--final_layer', type=str, default="linear",choices=["feedforward","linear"], help="choose final layer feedforward or linear layer")
@@ -59,7 +58,7 @@ def parse_args():
     return parser.parse_args()
 
 #test evaluation for citation recommendation
-def predict(args,epoch,model,ent_vocab,test_set,source_times_dict):
+def predict(args,epoch,model,ent_vocab,test_set):
     test_dataloader = torch.utils.data.DataLoader(test_set, batch_size = 1, shuffle = False, num_workers = 2, collate_fn=Collate_fn(args.MAX_LEN).collate_fn)
     mrr_all = 0
     Recallat5_all = Recallat10_all = Recallat30_all = Recallat50_all = 0
@@ -67,11 +66,10 @@ def predict(args,epoch,model,ent_vocab,test_set,source_times_dict):
     l_all = 0
     l_prev = 0
     fw = open("../results/"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".txt","w")
-    score_per_times = defaultdict(list)
     with torch.no_grad():
         for (inputs,labels) in test_dataloader:
             outputs = model(input_ids=inputs["input_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),masked_lm_labels=inputs["masked_lm_labels"].cuda(),attention_mask=inputs["attention_mask"].cuda())
-            MAP,mrr,Recallat5,Recallat10,Recallat30,Recallat50,l,score_per_times = Evaluation(outputs["entity_logits"].cpu(),inputs["masked_lm_labels"],source_times_dict,score_per_times)
+            MAP,mrr,Recallat5,Recallat10,Recallat30,Recallat50,l = Evaluation(outputs["entity_logits"].cpu(),inputs["masked_lm_labels"])
             mrr_all += mrr
             Recallat5_all += Recallat5
             Recallat10_all += Recallat10
@@ -91,10 +89,6 @@ def predict(args,epoch,model,ent_vocab,test_set,source_times_dict):
         s += "MAP\n" + str(MAP_all/l_all)+"\n"
         fw.write(s)
         print(s)
-        for key in score_per_times:
-            score_per_times[key] = sum(score_per_times[key])/len(score_per_times[key])
-        print("MRR per times in train")
-        print(score_per_times)
 
 
 def node_classification(args,epoch,model,ent_vocab):
@@ -112,8 +106,8 @@ def node_classification(args,epoch,model,ent_vocab):
         sns.heatmap(heatmap)
         pyplot.savefig("images/TransBasedCitEmb_table.png")
         pyplot.close()
-    X_train,y_train,X_test,y_test = load_data_SVM_with_context(args,model,ent_vocab,args.MAX_LEN,args.WINDOW_SIZE)
-    #X_train,y_train,X_test,y_test = load_data_SVM_from_linear(model,ent_vocab)
+    #X_train,y_train,X_test,y_test = load_data_SVM_with_context(model,ent_vocab,args.MAX_LEN,args.WINDOW_SIZE)
+    X_train,y_train,X_test,y_test = load_data_SVM_from_linear(model,ent_vocab)
     #draw_table(X_train+X_test,y_train+y_test)
     print("SVM data load done")
     print("training start")
@@ -138,8 +132,6 @@ def node_classification(args,epoch,model,ent_vocab):
     pyplot.savefig("images/TransBasedCitEmb_randomMASK.png") # 保存
     Cs = [2 , 2**5, 2 **10]
     gammas = [2 ** -9, 2 ** -6, 2** -3,2 ** 3, 2 ** 6, 2 ** 9]
-    print(len(X_train))
-    print(len(y_train))
     svs = [svm.SVC(C=C, gamma=gamma).fit(X_train, y_train) for C, gamma in product(Cs, gammas)]
     products = [(C,gamma) for C,gamma in product(Cs,gammas)]
     print("training done")
@@ -295,10 +287,6 @@ def main():
         train_set, test_set, ent_vocab = load_PeerRead_graph_data(args)
     num_ent = len(ent_vocab)
 
-    #train data内のcited paperの分布を調べる
-    source_times_dict = count_times(args,ent_vocab)
-    print(source_times_dict)
-
     devices = list(range(torch.cuda.device_count()))
     if torch.cuda.is_available():
         print("GPU OK")
@@ -349,8 +337,8 @@ def main():
             model.load_state_dict(torch.load(os.path.join(settings.model_path,model_name)))
             model.eval()
             #save_embeddings(model,ent_vocab,args.MAX_LEN,args.WINDOW_SIZE)
-            predict(args,epoch,model,ent_vocab,test_set,source_times_dict)
-            node_classification(args,epoch,model,ent_vocab)
+            predict(args,epoch,model,ent_vocab,test_set)
+            #node_classification(args,epoch,model,ent_vocab)
             #intent_identification(args,epoch,model,ent_vocab)
 
 

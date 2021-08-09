@@ -17,12 +17,19 @@ import json
 #for each node in node classification data, collect all contexts for that
 #if there is data whose tail node is what we want to collect, we collect all of them
 #else, we collect all data whose head node is what we want to collect
-def load_raw_data():
-    dftrain5 = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train_frequency5.csv"),quotechar="'")
-    dftrain = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train.csv"),quotechar="'")
-    dftest = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"test.csv"),quotechar="'")
-    ftrain = open(os.path.join(settings.node_classification_dir,"title2task_train.txt"))
-    ftest = open(os.path.join(settings.node_classification_dir,"title2task_test.txt"))
+def load_raw_data(args):
+    if args.dataset == "AASC":
+        dftrain5 = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train_frequency5.csv"),quotechar="'")
+        dftrain = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train.csv"),quotechar="'")
+        dftest = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"test.csv"),quotechar="'")
+        ftrain = open(os.path.join(settings.node_classification_dir,"title2task_train.txt"))
+        ftest = open(os.path.join(settings.node_classification_dir,"title2task_test.txt"))
+    else:
+        dftrain5 = pd.read_csv(os.path.join(settings.citation_recommendation_PeerRead_dir,"train_frequency5.csv"))
+        dftrain = pd.read_csv(os.path.join(settings.citation_recommendation_PeerRead_dir,"train.csv"))
+        dftest = pd.read_csv(os.path.join(settings.citation_recommendation_PeerRead_dir,"test.csv"))
+        ftrain = open(os.path.join(settings.node_classification_PeerRead_dir,"title2task_PWCode_train.txt"))
+        ftest = open(os.path.join(settings.node_classification_PeerRead_dir,"title2task_PWCode_test.txt"))
     tail_train5_dict = defaultdict(dict)
     head_train5_dict = defaultdict(dict)
     tail_all_dict = defaultdict(dict)
@@ -36,11 +43,13 @@ def load_raw_data():
         head_all_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
         both_all_dict[source_id][target_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
         both_all_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
+    """
     for source_id,target_id,left_citated_text,right_citated_text in zip(dftest["source_id"],dftest["target_id"],dftest["left_citated_text"],dftest["right_citated_text"]):
         tail_all_dict[source_id][target_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
         head_all_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
         both_all_dict[source_id][target_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
         both_all_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
+    """
     tail5_number = 0
     head5_number = 0
     tailall_number = 0
@@ -63,6 +72,10 @@ def load_raw_data():
         elif paper in head_train5_dict and head_train5_dict[paper] != {}:
             head5_number += 1
             elements = [{"data":head_train5_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_train5_dict[paper].keys())]
+        else:
+            elements = [{"data":tail_all_dict[paper][target_id],"target_id":target_id,"source_id":paper,"th":"tail"} for target_id in list(tail_all_dict[paper].keys())] + [{"data":head_all_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_all_dict[paper].keys())]
+        if len(elements) == 0:
+            print(paper)
         X_train.append(elements)
         if task not in taskdict:
             taskn += 1
@@ -91,11 +104,20 @@ def load_raw_data():
         elif paper in head_train5_dict and head_train5_dict[paper] != {}:
             head5_number += 1
             elements = [{"data":head_train5_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_train5_dict[paper].keys())]
+        else:
+            elements = [{"data":tail_all_dict[paper][target_id],"target_id":target_id,"source_id":paper,"th":"tail"} for target_id in list(tail_all_dict[paper].keys())] + [{"data":head_all_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_all_dict[paper].keys())] 
+        if len(elements) == 0:
+            print(paper)
         X_test.append(elements)
         if task not in taskdict:
             taskn += 1
             taskdict[task] = taskn
         y_test.append(taskdict[task])
+    print("lens")
+    print(len(X_train))
+    print(len(y_train))
+    print(len(X_test))
+    print(len(y_test))
     return X_train,y_train,X_test,y_test
 
 #convert each node into input_id
@@ -226,10 +248,14 @@ def get_embeddings_all_layer(model,datas,MAX_LEN,WINDOW_SIZE):
     return X_embeddings
 
 #get embeddings for each node by taking average of contexts
-def load_data_SVM_with_context(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
-    X_train,y_train,X_test,y_test = load_raw_data()
-    converted_path_train = os.path.join(settings.citation_recommendation_dir,"SVM_train.json")
-    converted_path_test = os.path.join(settings.citation_recommendation_dir,"SVM_test.json")
+def load_data_SVM_with_context(args,model,ent_vocab,MAX_LEN,WINDOW_SIZE):
+    X_train,y_train,X_test,y_test = load_raw_data(args)
+    if args.dataset == "AASC":
+        converted_path_train = os.path.join(settings.citation_recommendation_dir,"SVM_train.json")
+        converted_path_test = os.path.join(settings.citation_recommendation_dir,"SVM_test.json")
+    else:
+        converted_path_train = os.path.join(settings.citation_recommendation_PeerRead_dir,"SVM_train.json")
+        converted_path_test = os.path.join(settings.citation_recommendation_PeerRead_dir,"SVM_test.json")
     if os.path.exists(converted_path_train):
         with open(converted_path_train) as f:
             X_train = json.load(f)
