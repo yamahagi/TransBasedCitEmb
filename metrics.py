@@ -85,7 +85,7 @@ def Evaluation(ent_logits_batch,masked_lm_labels_batch,source_times_dict,score_p
         rank = list(rank_array).index(ans)+1
         mrr += 1/rank
         if rank <= 30:
-            MAP += 1/rank
+            MAP += (31-rank)/(30*rank)
         if rank <= 5:
             recallat5 += 1
         if rank <= 10:

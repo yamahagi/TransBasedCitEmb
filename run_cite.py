@@ -1,5 +1,5 @@
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import sys
 
 import argparse
@@ -45,7 +45,7 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=16, help="batch size")
     parser.add_argument('--frequency', type=int, default=5, help="frequency to remove rare entity")
     parser.add_argument('--lr', type=float, default=5e-5, help="learning rate")
-    parser.add_argument('--epoch', type=int, default=20, help="number of epochs")
+    parser.add_argument('--epoch', type=int, default=5, help="number of epochs")
     parser.add_argument('--WINDOW_SIZE', type=int, default=125,choices=[125,250], help="the length of context length")
     parser.add_argument('--MAX_LEN', type=int, default=256,choices=[256,512], help="MAX length of the input")
     parser.add_argument('--final_layer', type=str, default="linear",choices=["feedforward","linear"], help="choose final layer feedforward or linear layer")
@@ -297,7 +297,7 @@ def main():
 
     #train data内のcited paperの分布を調べる
     source_times_dict = count_times(args,ent_vocab)
-    print(source_times_dict)
+    #print(source_times_dict)
 
     devices = list(range(torch.cuda.device_count()))
     if torch.cuda.is_available():
