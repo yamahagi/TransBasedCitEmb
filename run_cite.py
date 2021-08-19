@@ -1,5 +1,5 @@
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 import sys
 
 import argparse
@@ -202,7 +202,11 @@ def intent_identification(args,epoch,model,ent_vocab):
         X_color_y = np.array([X_place[1] for X_place in X_color])
         ax.scatter(X_color_x,X_color_y,c=color)
     pyplot.savefig("images/TransBasedCitEmb_intent_identification_minus.png") # 保存
-    """
+    l = [i for i in range(len(X))]
+    #fix random seed to 10
+    random.seed(10)
+    random.shuffle(l)
+    dict1 = {}
     for epoch in range(5):
         if epoch == 0:
             X_train = [X[i] for i in l[:len(l)//5]]
@@ -219,7 +223,6 @@ def intent_identification(args,epoch,model,ent_vocab):
             y_train = [y[i] for i in l[len(l)*epoch//5:len(l)*(epoch+1)//5]]
             X_test = [X[i] for i in l[:len(l)*epoch//5]+l[len(l)*(epoch+1)//5:]]
             y_test = [y[i] for i in l[:len(l)*epoch//5]+l[len(l)*(epoch+1)//5:]]
-        print("training start")
         Cs = [2 , 2**5, 2 **10]
         gammas = [2 ** -9, 2 ** -6, 2** -3,2 ** 3, 2 ** 6, 2 ** 9]
         svs = [svm.SVC(C=C, gamma=gamma).fit(X_train, y_train) for C, gamma in product(Cs, gammas)]
@@ -227,16 +230,21 @@ def intent_identification(args,epoch,model,ent_vocab):
         print("training done")
         for sv,product1 in zip(svs,products):
             test_label = sv.predict(X_test)
-            fw.write("C:"+str(product1[0])+","+"gamma:"+str(product1[1])+"\n")
-            fw.write("正解率="+str(accuracy_score(y_test, test_label))+"\n")
-            fw.write("マクロ平均="+str(f1_score(y_test, test_label,average="macro"))+"\n")
-            fw.write("ミクロ平均="+str(f1_score(y_test, test_label,average="micro"))+"\n")
-            fw.write(str(collections.Counter(test_label))+"\n")
-            print("正解率＝", accuracy_score(y_test, test_label))
-            print("マクロ平均＝", f1_score(y_test, test_label,average="macro"))
-            print("ミクロ平均＝", f1_score(y_test, test_label,average="micro"))
-            print(collections.Counter(test_label))
-    """
+            s1 = "C:"+str(product1[0])+","+"gamma:"+str(product1[1])
+            if s1 not in dict1:
+                dict1[s1] = {"正解率":accuracy_score(y_test, test_label),"マクロ平均":f1_score(y_test, test_label,average="macro"),"ミクロ平均":f1_score(y_test, test_label,average="micro"),"分類結果":collections.Counter(test_label)}
+            else:
+                dict1[s1]["正解率"] += accuracy_score(y_test, test_label)
+                dict1[s1]["マクロ平均"] += f1_score(y_test, test_label,average="macro")
+                dict1[s1]["ミクロ平均"] += f1_score(y_test, test_label,average="micro")
+                for key in dict1[s1]["分類結果"]:
+                    dict1[s1]["分類結果"][key] += collections.Counter(test_label)[key]
+    for sv,product1 in zip(svs,products):
+        s1 = "C:"+str(product1[0])+","+"gamma:"+str(product1[1])
+        print("正解率＝", dict1[s1]["正解率"]/5)
+        print("マクロ平均＝", dict1[s1]["マクロ平均"]/5)
+        print("ミクロ平均＝", dict1[s1]["ミクロ平均"]/5)
+        print(dict1[s1]["分類結果"])
 
 class Collate_fn():
     def __init__(self,MAX_LEN):
@@ -351,7 +359,7 @@ def main():
             #save_embeddings(model,ent_vocab,args.MAX_LEN,args.WINDOW_SIZE)
             predict(args,epoch,model,ent_vocab,test_set,source_times_dict)
             node_classification(args,epoch,model,ent_vocab)
-            #intent_identification(args,epoch,model,ent_vocab)
+            intent_identification(args,epoch,model,ent_vocab)
 
 
 if __name__ == '__main__':
