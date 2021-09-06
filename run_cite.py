@@ -44,7 +44,7 @@ def parse_args():
     parser.add_argument('--dataset', type=str, default='AASC',choices=['AASC','PeerRead'],help="AASC or PeerRead")
     parser.add_argument('--batch_size', type=int, default=16, help="batch size")
     parser.add_argument('--frequency', type=int, default=5, help="frequency to remove rare entity")
-    parser.add_argument('--lr', type=float, default=5e-5, help="learning rate")
+    parser.add_argument('--lr', type=float, default=8e-5, help="learning rate")
     parser.add_argument('--epoch', type=int, default=5, help="number of epochs")
     parser.add_argument('--WINDOW_SIZE', type=int, default=125,choices=[125,250], help="the length of context length")
     parser.add_argument('--MAX_LEN', type=int, default=256,choices=[256,512], help="MAX length of the input")
@@ -52,11 +52,57 @@ def parse_args():
     parser.add_argument('--loss_type', type=str, default="CrossEntropy", choices=["CrossEntropy","MeanSquaredError"],help="CrossEntropy or MeanSquaredError Loss")
     parser.add_argument('--train', action='store_true')
     parser.add_argument('--predict', action='store_true')
-    parser.add_argument('--pretrained_model', type=str, default="scibert", choices=["scibert","bert"], help="scibert or bert")
+    parser.add_argument('--pretrained_model', type=str, default="scibert", choices=["scibert","bert","nopretrain"], help="scibert or bert")
     parser.add_argument('--mask_type', type=str, default="tail", choices=["tail","random","both"], help="mask [tail,random,both] paper")
     parser.add_argument('--train_data', type=str, default="excluded", choices=["excluded","full"], help="remove low frequency data or not [excluded,full] during training")
     parser.add_argument('--test_data', type=str, default="excluded", choices=["excluded","full"], help="remove low frequency data or not [excluded,full]")
     return parser.parse_args()
+
+def attention_visualization(args,epoch,model,ent_vocab,test_set,source_times_dict):
+    #sampled test dataに対してvisualizationを行う
+    #test setから100個ほどsampling
+    #attentionを可視化
+    #結果を添付
+    return 0
+
+def highlight(word, attn):
+  html_color = '#%02X%02X%02X' % (255, int(255*(1 - attn)), int(255*(1 - attn)))
+  return '<span style="background-color: {}">{}</span>'.format(html_color, word)
+
+def mk_html(index, batch, preds, attention_weight):
+  sentence = batch.Text[0][index]
+  label = batch.Label[index].item()
+  pred = preds[index].item()
+
+  label_str = id2cat[label]
+  pred_str = id2cat[pred]
+
+  html = "正解カテゴリ: {}<br>予測カテゴリ: {}<br>".format(label_str, pred_str)
+
+  # 文章の長さ分のzero tensorを宣言
+  seq_len = attention_weight.size()[2]
+  all_attens = torch.zeros(seq_len).to(device)
+
+  for i in range(12):
+    all_attens += attention_weight[index, i, 0, :]
+
+  for word, attn in zip(sentence, all_attens):
+    if tokenizer.convert_ids_to_tokens([word.tolist()])[0] == "[SEP]":
+      break
+    html += highlight(tokenizer.convert_ids_to_tokens([word.numpy().tolist()])[0], attn)
+  html += "<br><br>"
+  return html
+
+def plot_losses(args,losses,epoch):
+    losses = np.array(losses)
+    x = np.array([i+1 for i in range(len(losses))])
+    fig = plt.figure()
+    plt.plot(x, losses)
+    fig_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+"_epoch"+epoch+".png"
+    fig.savefig("./images/"+fig_name)
+
+
+
 
 #test evaluation for citation recommendation
 def predict(args,epoch,model,ent_vocab,test_set,source_times_dict):
@@ -306,13 +352,7 @@ def main():
     #train data内のcited paperの分布を調べる
     source_times_dict = count_times(args,ent_vocab)
     #print(source_times_dict)
-
-    devices = list(range(torch.cuda.device_count()))
-    if torch.cuda.is_available():
-        print("GPU OK")
-    else:
-        print("GPU NO")
-
+    
     # load parameters
     if args.pretrained_model == "scibert":
         model = PTBCN.from_pretrained(settings.pretrained_scibert_path,num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN,final_layer=args.final_layer,loss_type=args.loss_type)
@@ -322,19 +362,31 @@ def main():
     model.cuda()
     model.train()
     print('parameters of SciBERT has been loaded.')
+    
+    devices = list(range(torch.cuda.device_count()))
+    if torch.cuda.is_available():
+        print("GPU OK")
+    else:
+        print("GPU NO")
 
     # fine-tune
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=1.0)
 
-    model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".bin"
+    #model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".bin"
+    model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+"_number6.bin"
     pretrained_model_path = os.path.join(settings.model_path,model_name)
+    print("number 6")
     print("train start")
     if args.train:
+        losses = []
         for epoch in range(1,args.epoch+1):
             if args.dataset == "AASC":
-                train_set, test_set, ent_vocab = load_AASC_graph_data(args)
+                if epoch == 1 or args.mask_type == "random":
+                    train_set, test_set, ent_vocab = load_AASC_graph_data(args)
             else:
-                train_set, test_set, ent_vocab = load_PeerRead_graph_data(args)
+                if epoch == 1 or args.mask_type == "random":
+                    train_set, test_set, ent_vocab = load_PeerRead_graph_data(args)
             train_dataloader = torch.utils.data.DataLoader(train_set, batch_size = args.batch_size, shuffle = True, num_workers = os.cpu_count()//2, collate_fn=Collate_fn(args.MAX_LEN).collate_fn)
             print("epoch: "+str(epoch))
             with tqdm(train_dataloader) as pbar:
@@ -345,15 +397,20 @@ def main():
                     loss.backward()
                     optimizer.step()
                     pbar.set_postfix(collections.OrderedDict(loss=loss.detach().cpu().numpy()))
+                    losses.append(loss.detach().cpu().numpy())
+            scheduler.step()
+            plot_losses(args,losses,epoch)
             if epoch % 5 == 0 or epoch == args.epoch:
                 #save model
-                model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".bin"
+                #model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".bin"
+                model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+"_number6.bin"
                 torch.save(model.state_dict(),os.path.join(settings.model_path,model_name))
     print("train end")
     if args.predict:
         for i in range(1,args.epoch//5+1):
             epoch = i*5
-            model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".bin"
+            #model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".bin"
+            model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+"_number6.bin"
             model.load_state_dict(torch.load(os.path.join(settings.model_path,model_name)))
             model.eval()
             #save_embeddings(model,ent_vocab,args.MAX_LEN,args.WINDOW_SIZE)

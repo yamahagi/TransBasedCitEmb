@@ -63,7 +63,8 @@ class PTBCN(BertForMaskedLM):
             token_type_ids=token_type_ids,
             position_ids=position_ids,
             inputs_embeds=input_embeds,
-            output_hidden_states=True
+            output_hidden_states=True,
+            output_attentions = True
         )
         sequence_output = outputs[0]  # batch x seq_len x hidden_size
         outputs_each_layer = outputs[2]
@@ -81,7 +82,8 @@ class PTBCN(BertForMaskedLM):
                 'entity_pred': ent_predict,
                 'entity_logits': ent_logits,
                 'sequence_output': sequence_output,
-                'outputs_each_layer': outputs_each_layer}
+                'outputs_each_layer': outputs_each_layer,
+                'attentions':outputs[3]}
 
 #input sequence: [citing paper id, frozen SciBERT embeddings of citation context, cited paper id]
 class PTBCNCOKE(BertForMaskedLM):
