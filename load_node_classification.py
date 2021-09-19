@@ -13,6 +13,15 @@ import pickle
 import settings
 import json
 
+from itertools import product
+import collections
+
+from sklearn import svm
+from sklearn.metrics import accuracy_score,f1_score
+from sklearn.decomposition import PCA
+from matplotlib import pyplot
+
+
 #extract node classification data
 #for each node in node classification data, collect all contexts for that
 #if there is data whose tail node is what we want to collect, we collect all of them
@@ -274,6 +283,37 @@ def load_data_SVM_with_context(args,model,ent_vocab,MAX_LEN,WINDOW_SIZE):
     X_test = get_embeddings(model,X_test,MAX_LEN,WINDOW_SIZE)
     return X_train,y_train,X_test,y_test
 
+def load_data_SVM_from_pkl():
+    paper_embeddings_dict = pickle.load(open(os.path.join(settings.citation_recommendation_dir,"AASC_embeddings.pkl"),"rb"))
+    ftrain = open(os.path.join(settings.node_classification_dir,"title2task_train.txt"))
+    ftest = open(os.path.join(settings.node_classification_dir,"title2task_test.txt"))
+    X_train = []
+    y_train = []
+    taskdict = {}
+    taskn = -1
+    alln = 0
+    for line in ftrain:
+        l = line[:-1].split("\t")
+        paper = l[0]
+        task = l[1]
+        X_train.append(paper_embeddings_dict[paper])
+        if task not in taskdict:
+            taskn += 1
+            taskdict[task] = taskn
+        y_train.append(taskdict[task])
+    X_test = []
+    y_test = []
+    for line in ftest:
+        l = line[:-1].split("\t")
+        paper = l[0]
+        task = l[1]
+        X_test.append(paper_embeddings_dict[paper])
+        if task not in taskdict:
+            taskn += 1
+            taskdict[task] = taskn
+        y_test.append(taskdict[task])
+    return X_train,y_train,X_test,y_test
+
 #get embeddings for each node by taking average of contexts for all layer
 def load_data_SVM_with_context_all_layer(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
     X_train,y_train,X_test,y_test = load_raw_data()
@@ -493,5 +533,36 @@ def load_data_SVM_COKE(model,ent_vocab):
     return X_train,y_train,X_test,y_test
 
 if __name__ == "__main__":
-    ent_vocab = build_ent_vocab("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/train.csv")
-    load_data_SVM_with_context(ent_vocab)
+    X_train,y_train,X_test,y_test = load_data_SVM_from_pkl()
+    print("SVM data load done")
+    print("training start")
+    print("PCA start")
+    pca = PCA(n_components=2)
+    pca.fit(X_test)
+    X_test_visualization = pca.transform(X_test)
+    print("PCA done: " + str(len(X_test)))
+    print("Y length: " + str(len(y_test)))
+    print("visualization start")
+    fig, ax = pyplot.subplots(figsize=(20,20))
+    X_test_colors = [[] for _ in range(max(y_test)+1)]
+    y_test_colors = [[] for _ in range(max(y_test)+1)]
+    colors_name = ["black","grey","tomato","saddlebrown","palegoldenrod","olivedrab","cyan","steelblue","midnightblue","darkviolet","magenta","pink","yellow"]
+    for x,y in zip(X_test_visualization,y_test):
+        X_test_colors[y].append(x)
+        y_test_colors[y].append(y)
+    for X_color,color in zip(X_test_colors,colors_name):
+        X_color_x = np.array([X_place[0] for X_place in X_color])
+        X_color_y = np.array([X_place[1] for X_place in X_color])
+        ax.scatter(X_color_x,X_color_y,c=color)
+    pyplot.savefig("images/TransBasedCitEmb_pkl.png") # 保存
+    Cs = [2 , 2**5, 2 **10]
+    gammas = [2 ** -9, 2 ** -6, 2** -3,2 ** 3, 2 ** 6, 2 ** 9]
+    svs = [svm.SVC(C=C, gamma=gamma).fit(X_train, y_train) for C, gamma in product(Cs, gammas)]
+    products = [(C,gamma) for C,gamma in product(Cs,gammas)]
+    print("training done")
+    for sv,product1 in zip(svs,products):
+        test_label = sv.predict(X_test)
+        print("正解率＝", accuracy_score(y_test, test_label))
+        print("マクロ平均＝", f1_score(y_test, test_label,average="macro"))
+        print("ミクロ平均＝", f1_score(y_test, test_label,average="micro"))
+        print(collections.Counter(test_label))

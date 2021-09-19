@@ -13,6 +13,15 @@ import pickle
 import settings
 import json
 
+from sklearn.manifold import TSNE
+from matplotlib import pyplot
+
+from sklearn import svm
+from sklearn.metrics import accuracy_score,f1_score
+from collections import Counter
+from itertools import product
+import collections
+
 def load_raw_data():
     dftrain5 = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train_frequency5.csv"),quotechar="'")
     dftrain = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train.csv"),quotechar="'")
@@ -199,6 +208,89 @@ def load_data_intent_identification_scibert(ent_vocab,matrix_train,matrix_test):
             y.append(intentdict[intent])
     return X,y
 
+def load_data_intent_identification_from_pkl():
+    f = open(os.path.join(settings.intent_identification_dir,"id2intent.txt"))
+    X = []
+    y = []
+    intentdict = {}
+    intentn = 0
+    paper_embeddings_dict = pickle.load(open(os.path.join(settings.citation_recommendation_dir,"AASC_embeddings.pkl"),"rb"))
+    with torch.no_grad():
+        for i,line in enumerate(f):
+            if i == 0:
+                continue
+            l = line.split("\t")
+            target_id = l[0]
+            source_id = l[1]
+            intent = l[2]
+            if intent not in intentdict:
+                intentdict[intent] = intentn
+                intentn += 1
+            X.append(np.concatenate([paper_embeddings_dict[target_id],paper_embeddings_dict[source_id]]))
+            y.append(intentdict[intent])
+    return X,y
+
 if __name__ == "__main__":
-    ent_vocab = build_ent_vocab("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/train.csv")
-    load_data_SVM_with_context(ent_vocab)
+    X,y = load_data_intent_identification_from_pkl()
+    tsne = TSNE(n_components=2, random_state = 0, perplexity = 30, n_iter = 1000)
+    X_visualization = tsne.fit_transform(X)
+    print("PCA done: " + str(len(X)))
+    print("Y length: " + str(len(y)))
+    print("Y distribution")
+    print(collections.Counter(y))
+    print("visualization start")
+    fig, ax = pyplot.subplots(figsize=(20,20))
+    X_colors = [[] for _ in range(max(y)+1)]
+    y_colors = [[] for _ in range(max(y)+1)]
+    colors_name = ["black","grey","tomato","saddlebrown","palegoldenrod","olivedrab","cyan","steelblue","midnightblue","darkviolet","magenta","pink","yellow"]
+    for x1,y1 in zip(X_visualization,y):
+        X_colors[y1].append(x1)
+        y_colors[y1].append(y1)
+    for X_color,color in zip(X_colors,colors_name[:len(y_colors)]):
+        X_color_x = np.array([X_place[0] for X_place in X_color])
+        X_color_y = np.array([X_place[1] for X_place in X_color])
+        ax.scatter(X_color_x,X_color_y,c=color)
+    pyplot.savefig("PTBCN_AASC_intent_epoch.png") # 保存
+    l = [i for i in range(len(X))]
+    random.seed(10)
+    random.shuffle(l)
+    dict1 = {}
+    for epoch in range(5):
+        if epoch == 0:
+            X_test = [X[i] for i in l[:len(l)//5]]
+            y_test = [y[i] for i in l[:len(l)//5]]
+            X_train = [X[i] for i in l[len(l)//5:]]
+            y_train = [y[i] for i in l[len(l)//5:]]
+        elif epoch == 4:
+            X_test = [X[i] for i in l[len(l)*epoch//5:]]
+            y_test = [y[i] for i in l[len(l)*epoch//5:]]
+            X_train = [X[i] for i in l[:len(l)*epoch//5]]
+            y_train = [y[i] for i in l[:len(l)*epoch//5]]
+        else:
+            X_test = [X[i] for i in l[len(l)*epoch//5:len(l)*(epoch+1)//5]]
+            y_test = [y[i] for i in l[len(l)*epoch//5:len(l)*(epoch+1)//5]]
+            X_train = [X[i] for i in l[:len(l)*epoch//5]+l[len(l)*(epoch+1)//5:]]
+            y_train = [y[i] for i in l[:len(l)*epoch//5]+l[len(l)*(epoch+1)//5:]]
+        print("training start")
+        Cs = [2, 2**5, 2 **10]
+        gammas = [2 ** -6, 2** -3,2**-1, 2**1,2 ** 3, 2 ** 6]
+        svs = [svm.SVC(C=C, gamma=gamma).fit(X_train, y_train) for C, gamma in product(Cs, gammas)]
+        products = [(C,gamma) for C,gamma in product(Cs,gammas)]
+        print("training done")
+        for sv,product1 in zip(svs,products):
+            test_label = sv.predict(X_test)
+            s1 = "C:"+str(product1[0])+","+"gamma:"+str(product1[1])
+            if s1 not in dict1:
+                dict1[s1] = {"正解率":accuracy_score(y_test, test_label),"マクロ平均":f1_score(y_test, test_label,average="macro"),"ミクロ平均":f1_score(y_test, test_label,average="micro"),"分類結果":collections.Counter(test_label)}
+            else:
+                dict1[s1]["正解率"] += accuracy_score(y_test, test_label)
+                dict1[s1]["マクロ平均"] += f1_score(y_test, test_label,average="macro")
+                dict1[s1]["ミクロ平均"] += f1_score(y_test, test_label,average="micro")
+                for key in dict1[s1]["分類結果"]:
+                    dict1[s1]["分類結果"][key] += collections.Counter(test_label)[key]
+    for sv,product1 in zip(svs,products):
+        s1 = "C:"+str(product1[0])+","+"gamma:"+str(product1[1])
+        print("正解率＝", dict1[s1]["正解率"]/5)
+        print("マクロ平均＝", dict1[s1]["マクロ平均"]/5)
+        print("ミクロ平均＝", dict1[s1]["ミクロ平均"]/5)
+        print(dict1[s1]["分類結果"])

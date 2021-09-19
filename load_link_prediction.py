@@ -13,6 +13,15 @@ import pickle
 import settings
 import json
 
+import faiss
+from rank_eval import map as map_metrics
+from rank_eval import mrr as mrr_metrics
+import pandas as pd
+import os
+from collections import defaultdict
+from rank_eval.utils import to_typed_list
+from rank_eval import hits_at_k
+
 #extract link prediction data
 #for each node in node classification data, collect all contexts for that
 #if there is data whose tail node is what we want to collect, we collect all of them
@@ -157,7 +166,7 @@ def load_link_prediction(ent_vocab):
     df = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"test.csv"),quotechar="'")
     link_dict = defaultdict(set)
     for target_id,source_id in zip(df["target_id"],df["source_id"]):
-        link_dict[ent_vocab[target_id]].add(ent_vocab[source_id])
+        link_dict[ent_vocab[target_id]-2].add(ent_vocab[source_id]-2)
     return link_dict
 
 #get embeddings for each node by taking average of contexts
@@ -184,6 +193,14 @@ def load_data_link_prediction_with_context(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
     X_train = get_embeddings(model,X_train,MAX_LEN,WINDOW_SIZE)
     X_test = get_embeddings(model,X_test,MAX_LEN,WINDOW_SIZE)
     return X_train,y_train,X_test,y_test
+
+def load_data_link_prediction_from_pkl(ent_vocab):
+    paper_list = sorted([key for key in ent_vocab.keys()][2:],key= lambda x:ent_vocab[x])
+    paper_embeddings_dict = pickle.load(open(os.path.join(settings.citation_recommendation_dir,"AASC_embeddings.pkl"),"rb"))
+    paper_embeddings_list = []
+    for paper in paper_list:
+        paper_embeddings_list.append(paper_embeddings_dict[paper])
+    return np.array(paper_embeddings_list)
 
 #paper embeddingsのpathを引数とする
 #entity2idのpathも引数とする
@@ -236,8 +253,8 @@ def link_prediction(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
     #MAPを測る
     print(map_metrics(y_true,y_pred,k-100))
     #hits at 5
-    print(hits_at_k(y_true,y_pred,5))
+    print(hits_at_k(y_true,y_pred,10))
 
 if __name__ == "__main__":
     ent_vocab = build_ent_vocab("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/train.csv")
-    load_data_SVM_with_context(ent_vocab)
+    link_prediction(ent_vocab)

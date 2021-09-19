@@ -4,8 +4,7 @@ from fastNLP.core.utils import _get_func_signature
 from fastNLP.core.utils import _get_func_signature
 from sklearn.metrics import f1_score, precision_recall_fscore_support
 import numpy as np
-import time
-import settings
+import faiss
 
 
 
@@ -141,3 +140,44 @@ def MeanAveragePrecision(ent_logits_batch,masked_lm_labels_batch):
                     l += 1
                 break
     return MAP,l
+
+def load_link_predictio():
+    #test_pathからそれぞれのnodeをkeyとしてciteされたnodeのlistをvalueとしたdictを読み込む
+    df = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"test.csv"))
+    ent_vocab = build_ent_vocab(os.path.join(settings.citation_recommendation_dir,"train.csv"))
+    linkdict = defaultdict(set)
+    for target_id,source_id in zip(df["target_id"],df["source_id"]):
+        linkdict[ent_vocab[target_id]].add(ent_vocab[source_id])
+    return linkdict
+
+def link_prediction():
+    #link predictionのデータを読み込む
+    linkdict = load_link_prediction()
+    #それぞれのnodeをkeyとしてciteされたnodeのlistをvalueとしたdictを読み込む
+    #それぞれのnodeのembeddingsを読み込む
+    paper_embeddings = np.load()
+    #dict内のkeyごとにfaissを用いて1001までnodeを最近傍探索
+    query_embeddings = []
+    y_true = []
+    for target_id in linkdict:
+        query_embeddings.append(paper_embeddings[target_id])
+        y_true.append(list(linkdict[target_id]))
+    query_embeddings = np.array(query_embeddings)
+    y_true = np.array(y_true)
+
+    #prepare faiss
+    d = len(query_embeddings[0])                           # dimension
+    index = faiss.IndexFlatL2(d)   # build the index
+    print(index.is_trained)
+    index.add(paper_embeddings)                  # add vectors to the index
+    print(index.ntotal)
+
+    k = 1000                          # we want to see 4 nearest neighbors
+    D, I = index.search(xb[:5], k) # sanity check
+    print(I)
+    print(D)
+    D, I = index.search(xq, k)     # actual search
+    #MRRを測る
+    print(mrr_metrics(y_true,I,k))
+    #MAPを測る
+    print(map_metrics(y_true,I,k))
