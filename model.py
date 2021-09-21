@@ -10,7 +10,7 @@ import numpy as np
 class PTBCN(BertForMaskedLM):
     config_class = BertConfig
     base_model_prefix = "bert"
-    def __init__(self, config, num_ent, MAX_LEN, final_layer, loss_type):
+    def __init__(self, config, num_ent, MAX_LEN, final_layer, loss_type, adj):
         super().__init__(config)
         if final_layer == "feedforward":
             self.ent_lm_head = EntLMHead(config,num_ent)
@@ -20,12 +20,43 @@ class PTBCN(BertForMaskedLM):
         self.loss_type = loss_type
         self.MAX_LEN = MAX_LEN
         self.num_ent = num_ent
+        self.adj = adj
+        self.gamma = 0.8
 
     def change_type_embeddings(self):
         self.config.type_vocab_size = 2
         single_emb = self.bert.embeddings.token_type_embeddings
         self.bert.embeddings.token_type_embeddings = nn.Embedding(2, self.config.hidden_size)
         self.bert.embeddings.token_type_embeddings.weight = torch.nn.Parameter(single_emb.weight.repeat([2, 1]))
+
+    def Structure_Aware_CrossEntropy(self,ent_logits,target_ids,source_ids,source_indices):
+        #batch_size x seq_len x emb dim
+        softmax_layer = nn.Softmax(dim=2)
+        ent_softmax = softmax_layer(ent_logits)
+        loss = torch.tensor(0.0).cuda()
+        for ent_logit, target_id, source_id, source_index in zip(ent_softmax, target_ids, source_ids, source_indices):
+            #emb dim
+            ent_masked = ent_logit[source_index]
+            loss_tmp = torch.tensor(0.0).cuda()
+            neighbor_loss = torch.tensor(0.0).cuda()
+            source_loss = torch.tensor(0.0).cuda()
+            target_node = target_id.item()
+            neighbors = self.adj[target_node]
+            if len(neighbors) == 1:
+                loss_tmp += ent_masked[source_id]
+            else:
+                gamma_neighbors = (1-self.gamma)/(len(neighbors)-1)
+                for neighbor in neighbors:
+                    if neighbor == source_id:
+                        loss_tmp += self.gamma * ent_masked[source_id]
+                        source_loss = self.gamma * ent_masked[source_id]
+                    else:
+                        loss_tmp += gamma_neighbors * ent_masked[neighbor]
+                        neighbor_loss += gamma_neighbors * ent_masked[neighbor]
+            loss += -torch.log(loss_tmp)
+        loss /= len(target_ids)
+        return loss
+
     def forward(
             self,
             input_ids=None,
@@ -37,7 +68,8 @@ class PTBCN(BertForMaskedLM):
     ):
         input_embeds = []
         target_ids = []
-        target_indices = []
+        source_ids = []
+        source_indices = []
         for i,b in enumerate(input_ids):
             input_id = input_ids[i]
             token_type_id = token_type_ids[i]
@@ -52,8 +84,10 @@ class PTBCN(BertForMaskedLM):
                 else:
                     embedding.append(self.ent_embeddings(input_id[j]))
                     if masked_lm_id[j] != -1:
-                        target_ids.append(masked_lm_id[j])
-                        target_indices.append(j)
+                        source_ids.append(masked_lm_id[j])
+                        source_indices.append(j)
+                    else:
+                        target_ids.append(input_id[j])
             input_embed = torch.cat([emb.unsqueeze(0) for emb in embedding],dim = 0)
             input_embeds.append(input_embed)
         input_embeds = torch.cat([embedding.unsqueeze(0) for embedding in input_embeds],dim = 0).cuda()
@@ -63,16 +97,16 @@ class PTBCN(BertForMaskedLM):
             token_type_ids=token_type_ids,
             position_ids=position_ids,
             inputs_embeds=input_embeds,
-            output_hidden_states=True,
-            output_attentions = True
-        )
-        sequence_output = outputs[0]  # batch x seq_len x hidden_size
-        outputs_each_layer = outputs[2]
+            output_hidden_states=True)
+        sequence_output = outputs["last_hidden_state"]  # batch x seq_len x hidden_size
+        outputs_each_layer = outputs["hidden_states"]
         ent_logits = self.ent_lm_head(sequence_output)
         ent_predict = torch.argmax(ent_logits, dim=-1)
         if self.loss_type == "CrossEntropy":
             loss_fct = CrossEntropyLoss(ignore_index=-1)
             ent_masked_lm_loss = loss_fct(ent_logits.view(-1, ent_logits.size(-1)), masked_lm_labels.view(-1))
+        elif self.loss_type == "StructureAwareCrossEntropy":
+            ent_masked_lm_loss = self.Structure_Aware_CrossEntropy(ent_logits,target_ids,source_ids,source_indices)
         else:
             loss_fct = MSELoss()
             target_tensor = torch.nn.functional.one_hot(torch.tensor(target_ids).cuda(),num_classes=self.num_ent).float()
@@ -82,8 +116,7 @@ class PTBCN(BertForMaskedLM):
                 'entity_pred': ent_predict,
                 'entity_logits': ent_logits,
                 'sequence_output': sequence_output,
-                'outputs_each_layer': outputs_each_layer,
-                'attentions':outputs[3]}
+                'outputs_each_layer': outputs_each_layer}
 
 #input sequence: [citing paper id, frozen SciBERT embeddings of citation context, cited paper id]
 class PTBCNCOKE(BertForMaskedLM):

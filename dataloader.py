@@ -11,6 +11,8 @@ import numpy as np
 import random
 import settings
 
+from collections import defaultdict
+
 #make masked paper prediction data
 def make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,tokenizer,ent_vocab,mask_position):
     #mask cited paper(source_id)
@@ -344,6 +346,20 @@ def load_data_intent_identification(model,ent_vocab):
             X.append(np.concatenate([np.array(target_logits.cpu()),np.array(source_logits.cpu())]))
             y.append(intentdict[intent])
     return X,y
+
+def make_adjacent_matrix(train_set):
+    adj = defaultdict(set)
+    for data in train_set.data:
+        token_type_ids = data["token_type_ids"]
+        input_ids = data["input_ids"]
+        masked_lm_labels = data["masked_lm_labels"]
+        for token_type_id,input_id,masked_lm_label in zip(token_type_ids,input_ids,masked_lm_labels):
+            if token_type_id == 1 and masked_lm_label == -1:
+                target_id = input_id
+            elif token_type_id == 1:
+                source_id = masked_lm_label
+        adj[target_id].add(source_id)
+    return adj
 
 
 if __name__ == "__main__":
