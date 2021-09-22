@@ -36,6 +36,8 @@ import settings
 
 from load_link_prediction import save_embeddings
 
+import matplotlib.pyplot as plt
+
 
 #pathはsettings.pyで管理
 #それ以外のhyper parameterをargsで管理
@@ -98,7 +100,7 @@ def plot_losses(args,losses,epoch):
     x = np.array([i+1 for i in range(len(losses))])
     fig = plt.figure()
     plt.plot(x, losses)
-    fig_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+"_epoch"+epoch+".png"
+    fig_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+"_epoch"+str(epoch)+".png"
     fig.savefig("./images/"+fig_name)
 
 
