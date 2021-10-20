@@ -130,8 +130,11 @@ def load_raw_data(args):
     return X_train,y_train,X_test,y_test
 
 #convert each node into input_id
-def convert_data(datas,ent_vocab,MAX_LEN,WINDOW_SIZE):
-    tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
+def convert_data(args,datas,ent_vocab,MAX_LEN,WINDOW_SIZE):
+    if args.pretrained_model == "scibert":
+        tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
+    else:
+        tokenizer =  BertTokenizer.from_pretrained("bert-base-uncased", do_lower_case =False)
     converted_datas = []
     converted_elements = []
     for i,elements in enumerate(datas):
@@ -269,14 +272,14 @@ def load_data_SVM_with_context(args,model,ent_vocab,MAX_LEN,WINDOW_SIZE):
         with open(converted_path_train) as f:
             X_train = json.load(f)
     else:
-        X_train = convert_data(X_train,ent_vocab,MAX_LEN,WINDOW_SIZE)
+        X_train = convert_data(args,X_train,ent_vocab,MAX_LEN,WINDOW_SIZE)
         with open(converted_path_train,"w") as f:
             json.dump(X_train,f)
     if os.path.exists(converted_path_test):
         with open(converted_path_test) as f:
             X_test = json.load(f)
     else:
-        X_test = convert_data(X_test,ent_vocab,MAX_LEN,WINDOW_SIZE)
+        X_test = convert_data(args,X_test,ent_vocab,MAX_LEN,WINDOW_SIZE)
         with open(converted_path_test,"w") as f:
             json.dump(X_test,f)
     X_train = get_embeddings(model,X_train,MAX_LEN,WINDOW_SIZE)
@@ -323,14 +326,14 @@ def load_data_SVM_with_context_all_layer(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
         with open(converted_path_train) as f:
             X_train = json.load(f)
     else:
-        X_train = convert_data(X_train,ent_vocab,MAX_LEN,WINDOW_SIZE)
+        X_train = convert_data(args,X_train,ent_vocab,MAX_LEN,WINDOW_SIZE)
         with open(converted_path_train,"w") as f:
             json.dump(X_train,f)
     if os.path.exists(converted_path_test):
         with open(converted_path_test) as f:
             X_test = json.load(f)
     else:
-        X_test = convert_data(X_test,ent_vocab,MAX_LEN,WINDOW_SIZE)
+        X_test = convert_data(args,X_test,ent_vocab,MAX_LEN,WINDOW_SIZE)
         with open(converted_path_test,"w") as f:
             json.dump(X_test,f)
     X_trains = get_embeddings_all_layer(model,X_train,MAX_LEN,WINDOW_SIZE)

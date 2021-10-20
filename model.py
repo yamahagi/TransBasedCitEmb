@@ -10,7 +10,7 @@ import numpy as np
 class PTBCN(BertForMaskedLM):
     config_class = BertConfig
     base_model_prefix = "bert"
-    def __init__(self, config, num_ent, MAX_LEN, final_layer, loss_type, adj):
+    def __init__(self, config, num_ent, MAX_LEN, final_layer, loss_type, adj, gamma):
         super().__init__(config)
         if final_layer == "feedforward":
             self.ent_lm_head = EntLMHead(config,num_ent)
@@ -21,7 +21,7 @@ class PTBCN(BertForMaskedLM):
         self.MAX_LEN = MAX_LEN
         self.num_ent = num_ent
         self.adj = adj
-        self.gamma = 0.8
+        self.gamma = gamma
 
     def change_type_embeddings(self):
         self.config.type_vocab_size = 2

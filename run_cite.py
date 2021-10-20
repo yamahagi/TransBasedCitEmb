@@ -46,7 +46,8 @@ def parse_args():
     parser.add_argument('--dataset', type=str, default='AASC',choices=['AASC','PeerRead'],help="AASC or PeerRead")
     parser.add_argument('--batch_size', type=int, default=16, help="batch size")
     parser.add_argument('--frequency', type=int, default=5, help="frequency to remove rare entity")
-    parser.add_argument('--lr', type=float, default=8e-5, help="learning rate")
+    parser.add_argument('--lr', type=float, default=5e-5, help="learning rate")
+    parser.add_argument('--gamma', type=float, default=0.8, help="gamma for StructureAwareCrossEntropy")
     parser.add_argument('--epoch', type=int, default=5, help="number of epochs")
     parser.add_argument('--WINDOW_SIZE', type=int, default=125,choices=[125,250], help="the length of context length")
     parser.add_argument('--MAX_LEN', type=int, default=256,choices=[256,512], help="MAX length of the input")
@@ -358,13 +359,13 @@ def main():
     
     # load parameters
     if args.pretrained_model == "scibert":
-        model = PTBCN.from_pretrained(settings.pretrained_scibert_path,num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN,final_layer=args.final_layer,loss_type=args.loss_type,adj=adj)
+        model = PTBCN.from_pretrained(settings.pretrained_scibert_path,num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN,final_layer=args.final_layer,loss_type=args.loss_type,adj=adj,gamma=args.gamma)
     elif args.pretrained_model == "bert":
-        model = PTBCN.from_pretrained('bert-base-uncased',num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN,final_layer=args.final_layer,loss_type=args.loss_type,adj=adj)
+        model = PTBCN.from_pretrained('bert-base-uncased',num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN,final_layer=args.final_layer,loss_type=args.loss_type,adj=adj,gamma=args.gamma)
     else:
-        model = PTBCN.from_pretrained('bert-base-uncased',num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN,final_layer=args.final_layer,loss_type=args.loss_type,adj=adj)
-        for param in model.parameters():
-            nn.init.uniform_(param,a=0.0,b=0.1)
+        model = PTBCN.from_pretrained('bert-base-uncased',num_ent=len(ent_vocab),MAX_LEN=args.MAX_LEN,final_layer=args.final_layer,loss_type=args.loss_type,adj=adj,gamma=args.gamma)
+        for i,param in enumerate(model.parameters()):
+            nn.init.normal_(param,mean=0.0,std=0.2)
     model.change_type_embeddings()
     model.cuda()
     model.train()
@@ -381,9 +382,12 @@ def main():
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=1.0)
 
     #model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".bin"
-    model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+"_number1.bin"
+    model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+"_number5.bin"
     pretrained_model_path = os.path.join(settings.model_path,model_name)
     print(model_name)
+    if args.loss_type == "StructureAwareCrossEntropy":
+        print("StructureAwareCrossEntropyLoss: gamma")
+        print(args.gamma)
     print("train start")
     if args.train:
         losses = []
@@ -410,14 +414,14 @@ def main():
             if epoch % 5 == 0 or epoch == args.epoch:
                 #save model
                 #model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".bin"
-                model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+"_number1.bin"
+                model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+"_number5.bin"
                 torch.save(model.state_dict(),os.path.join(settings.model_path,model_name))
     print("train end")
     if args.predict:
         for i in range(1,args.epoch//5+1):
             epoch = i*5
             #model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".bin"
-            model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+"_number1.bin"
+            model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+"_number5.bin"
             model.load_state_dict(torch.load(os.path.join(settings.model_path,model_name)))
             model.eval()
             #save_embeddings(model,ent_vocab,args.MAX_LEN,args.WINDOW_SIZE)
