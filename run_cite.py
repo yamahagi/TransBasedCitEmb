@@ -46,7 +46,7 @@ def parse_args():
     parser.add_argument('--dataset', type=str, default='AASC',choices=['AASC','PeerRead'],help="AASC or PeerRead")
     parser.add_argument('--batch_size', type=int, default=16, help="batch size")
     parser.add_argument('--frequency', type=int, default=5, help="frequency to remove rare entity")
-    parser.add_argument('--lr', type=float, default=5e-5, help="learning rate")
+    parser.add_argument('--lr', type=float, default=8e-5, help="learning rate")
     parser.add_argument('--gamma', type=float, default=0.8, help="gamma for StructureAwareCrossEntropy")
     parser.add_argument('--epoch', type=int, default=5, help="number of epochs")
     parser.add_argument('--WINDOW_SIZE', type=int, default=125,choices=[125,250], help="the length of context length")
@@ -104,6 +104,11 @@ def plot_losses(args,losses,epoch):
     fig_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+"_epoch"+str(epoch)+".png"
     fig.savefig("./images/"+fig_name)
 
+#予測結果を書き込む関数を作りたい
+#データとともに予測された論文を5つほど提示
+#MRRも提示
+def predict_write_csv(args,epoch,model,ent_vocab,test_set,source_times_dict):
+    test_dataloader = torch.utils.data.DataLoader(test_set, batch_size = 1, shuffle = False, num_workers = 2, collate_fn=Collate_fn(args.MAX_LEN).collate_fn)
 
 
 
@@ -116,22 +121,28 @@ def predict(args,epoch,model,ent_vocab,test_set,source_times_dict):
     l_all = 0
     l_prev = 0
     fw = open("../results/"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".txt","w")
+    fcsv = open("../results/"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".csv","w")
+    writer = csv.writer(fcsv)
+    writer.writerow(["target_id","source_id","top5","MRR"])
     score_per_times = defaultdict(list)
     with torch.no_grad():
         for (inputs,labels) in test_dataloader:
             outputs = model(input_ids=inputs["input_ids"].cuda(),position_ids=inputs["position_ids"].cuda(),token_type_ids=inputs["token_type_ids"].cuda(),masked_lm_labels=inputs["masked_lm_labels"].cuda(),attention_mask=inputs["attention_mask"].cuda())
-            MAP,mrr,Recallat5,Recallat10,Recallat30,Recallat50,l,score_per_times = Evaluation(outputs["entity_logits"].cpu(),inputs["masked_lm_labels"],source_times_dict,score_per_times)
-            mrr_all += mrr
-            Recallat5_all += Recallat5
-            Recallat10_all += Recallat10
-            Recallat30_all += Recallat30
-            Recallat50_all += Recallat50
-            MAP_all += MAP
-            l_all += l
+            results_dict,score_array,score_per_times =  Evaluation(outputs["entity_logits"].cpu(),inputs["masked_lm_labels"],source_times_dict,score_per_times)
+            #resultsを取り出す
+            MAP_all += results_dict["MAP"]
+            mrr_all += results_dict["MRR"]
+            Recallat5_all += results_dict["R@5"]
+            Recallat10_all += results_dict["R@10"]
+            Recallat30_all += results_dict["R@30"]
+            Recallat50_all += results_dict["R@50"]
+            l_all += results_dict["batch_len"]
             if l_all - l_prev > 500:
                 l_prev = l_all
                 print(l_all)
                 print(mrr_all/l_all)
+            #csvにtarget_idとsource_id,rank_array上位5つとMRRを書き込む
+            writer.writerow([inputs["target_id"],inputs["source_id"],rank_array[:5],results_dict["MRR"])
         s = ""
         s += "MRR\n" + str(mrr_all/l_all)+"\n"
         s += "Recallat5\n" + str(Recallat5_all/l_all)+"\n"
@@ -425,8 +436,8 @@ def main():
             model.load_state_dict(torch.load(os.path.join(settings.model_path,model_name)))
             model.eval()
             #save_embeddings(model,ent_vocab,args.MAX_LEN,args.WINDOW_SIZE)
-            predict(args,epoch,model,ent_vocab,test_set,source_times_dict)
-            #node_classification(args,epoch,model,ent_vocab)
+            predict(args,epoch,model,ent_vocab,train_set,source_times_dict)
+            node_classification(args,epoch,model,ent_vocab)
             #intent_identification(args,epoch,model,ent_vocab)
 
 

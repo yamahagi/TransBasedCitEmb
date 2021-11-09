@@ -46,7 +46,7 @@ def make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,tokenizer,ent_vocab,mask_position
         position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
         masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [-1] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
         token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
-    data = {'input_ids': citationcontextl[:MAX_LEN],'masked_lm_labels' : masked_ids[:MAX_LEN],'position_ids': position_ids[:MAX_LEN],'token_type_ids': token_type_ids[:MAX_LEN]}
+    data = {'input_ids': citationcontextl[:MAX_LEN],'masked_lm_labels' : masked_ids[:MAX_LEN],'position_ids': position_ids[:MAX_LEN],'token_type_ids': token_type_ids[:MAX_LEN],"source_id":source_id,"target_id":target_id}
     return data
 
 def make_json(df,jsonpath,tokenizer):

@@ -64,7 +64,7 @@ def Evaluation(ent_logits_batch,masked_lm_labels_batch,source_times_dict,score_p
     ans = 0
     mrr = 0
     MAP = 0
-    l = 0
+    batch_len = 0
     recallat5 = 0
     recallat10 = 0
     recallat30 = 0
@@ -78,7 +78,7 @@ def Evaluation(ent_logits_batch,masked_lm_labels_batch,source_times_dict,score_p
                 break
         rank_array = list(rank_array)[::-1]
         if ans not in rank_array[:5000]:
-            l += 1
+            batch_len += 1
             score_per_times[source_times_dict[ans.item()]].append(0)
             continue
         rank = list(rank_array).index(ans)+1
@@ -93,9 +93,10 @@ def Evaluation(ent_logits_batch,masked_lm_labels_batch,source_times_dict,score_p
             recallat30 += 1
         if rank <= 50:
             recallat50 += 1
-        l += 1
+        batch_len += 1
         score_per_times[source_times_dict[ans.item()]].append(1/rank)
-    return MAP,mrr,recallat5,recallat10,recallat30,recallat50,l,score_per_times
+    results_dict = {"MAP":MAP,"MRR":mrr,"R@5":recallat5,"R@10":recallat10,"R@30":recallat30,"R@50":recallat50,"batch_len":batch_len}
+    return results_dict,rank_array,score_per_times
 
 def RecallatK(ent_logits_batch,masked_lm_labels_batch):
     ans = 0
