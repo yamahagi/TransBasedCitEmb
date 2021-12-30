@@ -63,7 +63,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_data_intent_identification(textdict):
+def load_data_intent_identification():
     intentn = -1
     intentdict = {}
     tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
@@ -97,14 +97,9 @@ def load_data_intent_identification(textdict):
                         return_attention_mask = True,   # Attention maksの作成
                         return_tensors = 'pt',     #  Pytorch tensorsで返す
                    )
-            if text in textdict and (textdict[text][0] == target_id and textdict[text][1] == source_id):
-                X_AASC_input_ids.append(encoded_dict['input_ids'])
-                X_AASC_attention_masks.append(encoded_dict['attention_mask'])
-                y_AASC.append(intentdict[intent])
-            else:
-                X_train_input_ids.append(encoded_dict['input_ids'])
-                X_train_attention_masks.append(encoded_dict['attention_mask'])
-                y_train.append(intentdict[intent])
+            X_train_input_ids.append(encoded_dict['input_ids'])
+            X_train_attention_masks.append(encoded_dict['attention_mask'])
+            y_train.append(intentdict[intent])
     X_train_input_ids = torch.cat(X_train_input_ids,dim=0)
     X_train_attention_masks = torch.cat(X_train_attention_masks,dim=0)
     f = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/test.jsonl")
@@ -134,84 +129,12 @@ def load_data_intent_identification(textdict):
                         return_attention_mask = True,   # Attention maksの作成
                         return_tensors = 'pt',     #  Pytorch tensorsで返す
                    )
-            if text in textdict and (textdict[text][0] == target_id and textdict[text][1] == source_id):
-                X_AASC_input_ids.append(encoded_dict['input_ids'])
-                X_AASC_attention_masks.append(encoded_dict['attention_mask'])
-                y_AASC.append(intentdict[intent])
-            else:
-                X_test_input_ids.append(encoded_dict['input_ids'])
-                X_test_attention_masks.append(encoded_dict['attention_mask'])
-                y_test.append(intentdict[intent])
+            X_test_input_ids.append(encoded_dict['input_ids'])
+            X_test_attention_masks.append(encoded_dict['attention_mask'])
+            y_test.append(intentdict[intent])
     X_test_input_ids = torch.cat(X_test_input_ids,dim=0)
     X_test_attention_masks = torch.cat(X_test_attention_masks,dim=0)
-    X_AASC_input_ids = torch.cat(X_AASC_input_ids,dim=0)
-    X_AASC_attention_masks = torch.cat(X_AASC_attention_masks,dim=0)
-    return X_train_input_ids,X_train_attention_masks,y_train,X_test_input_ids,X_test_attention_masks,y_test,X_AASC_input_ids,X_AASC_attention_masks,y_AASC
-
-def load_data_intent_identification():
-    intentn = -1
-    intentdict = {}
-    tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
-    f_train = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/train.jsonl")
-    f_test = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/test.jsonl")
-    X_input_ids = []
-    X_attention_masks = []
-    y = []
-    with torch.no_grad():
-        for f in [f_train,f_test]:
-            jsl = []
-            for i,line in enumerate(f):
-                js = json.loads(line)
-                jsl.append(js)
-            for i,js in enumerate(jsl):
-                if i == 0:
-                    print(js.keys())
-                target_id = js["citing_paper_id"]
-                source_id = js["cited_paper_id"]
-                intent = js["intent"]
-                text = js["text"]
-                if intent not in intentdict:
-                    intentn += 1
-                    intentdict[intent] = intentn
-                encoded_dict = tokenizer.encode_plus(
-                            text,
-                            add_special_tokens = True, # Special Tokenの追加
-                            max_length = 512,           # 文章の長さを固定（Padding/Trancatinating）
-                            pad_to_max_length = True,# PADDINGで埋める
-                            return_attention_mask = True,   # Attention maksの作成
-                            return_tensors = 'pt',     #  Pytorch tensorsで返す
-                       )
-                X_input_ids.append(encoded_dict['input_ids'])
-                X_attention_masks.append(encoded_dict['attention_mask'])
-                y.append(intentdict[intent])
-    X_input_ids = torch.cat(X_input_ids,dim=0)
-    X_attention_masks = torch.cat(X_attention_masks,dim=0)
-    return X_input_ids,X_attention_masks,y,intentdict
-
-def load_data_intent_identification_AASC():
-    intentn = -1
-    intentdict = {}
-    textdict = {}
-    f = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/id2intent.txt")
-    X = []
-    y = []
-    paperdict = defaultdict(dict)
-    for i,line in enumerate(f):
-        if i == 0:
-            continue
-        l = line.rstrip("\n").split("\t")
-        target_id = l[0]
-        source_id = l[1]
-        intent = l[2]
-        text = l[3]
-        if intent not in intentdict:
-            intentn += 1
-            intentdict[intent] = intentn
-        X.append({"target_id":target_id,"source_id":source_id,"text":text})
-        paperdict[target_id][source_id] = intent
-        textdict[text] = (target_id,source_id)
-        y.append(intentdict[intent])
-    return X,y,textdict
+    return X_train_input_ids,X_train_attention_masks,y_train,X_test_input_ids,X_test_attention_masks,y_test
 
 def load_data_intent_identification_for_tagging():
     tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
@@ -244,15 +167,6 @@ def plot_intent_identification(X_AASC_input_ids,X_AASC_attention_masks,y_AASC,mo
     y = []
     i = 0
     with torch.no_grad():
-        """
-        for input_ids,attention_masks,label in zip(X_train_input_ids,X_train_attention_masks,y_train):
-            input_ids = input_ids.unsqueeze(0)
-            attention_masks = attention_masks.unsqueeze(0)
-            y.append(label)
-            label = torch.tensor([label])
-            outputs = model(input_ids=input_ids.cuda(),attention_mask=attention_masks.cuda(),labels=label.cuda())
-            X.append(np.array(outputs["hidden_states"][-1][0][0].cpu()))
-        """
         for input_ids,attention_masks,label in zip(X_AASC_input_ids,X_AASC_attention_masks,y_AASC):
             input_ids = input_ids.unsqueeze(0)
             attention_masks = attention_masks.unsqueeze(0)
@@ -352,15 +266,13 @@ def calculate_accuracy(intentdict):
 
 def main():
     args = parse_args()
-    #X,y,textdict = load_data_intent_identification_AASC()
-    #X_train_input_ids,X_train_attention_masks,y_train,X_test_input_ids,X_test_attention_masks,y_test,X_AASC_input_ids,X_AASC_attention_masks,y_AASC = load_data_intent_identification(textdict)
-    X_input_ids,X_attention_masks,y,intentdict = load_data_intent_identification()
-    print(intentdict)
+    X_train_input_ids,X_train_attention_masks,y_train,X_test_input_ids,X_test_attention_masks,y_test = load_data_intent_identification()
+    #X_input_ids,X_attention_masks,y,intentdict = load_data_intent_identification()
     #calculate_accuracy(intentdict)
-    train_set = ACLARCDataset(X_input_ids,X_attention_masks,y)
-    num_label = max(y)+1
+    train_set = ACLARCDataset(X_train_input_ids,X_train_attention_masks,y_train)
+    num_label = max(y_train)+1
     model = BertForSequenceClassification.from_pretrained(
-        "../pretrainedmodel/scibert_scivocab_uncased", # Use the 12-layer BERT model, with an uncased vocab.
+        "/home/ohagi_masaya/TransBasedCitEmb/pretrainedmodel/scibert_scivocab_uncased", # Use the 12-layer BERT model, with an uncased vocab.
         num_labels = num_label, # The number of output labels--2 for binary classification.
         output_attentions = False, # Whether the model returns attentions weights.
         output_hidden_states = True, # Whether the model returns all hidden-states.
@@ -372,7 +284,6 @@ def main():
     train_dataloader = torch.utils.data.DataLoader(train_set, batch_size = args.batch_size, shuffle = True, num_workers = os.cpu_count()//2)
     model.cuda()
     model.train()
-    """
     for epoch_i in range(1, args.epoch+1):
         total_train_loss = 0
         print("epoch: "+str(epoch_i))
@@ -393,10 +304,37 @@ def main():
         avg_train_loss = total_train_loss / len(train_dataloader)
         if epoch_i % 5 == 0:
             print(avg_train_loss)
-            torch.save(model.state_dict(),os.path.join(settings.model_path,"scibert_intent_identification_epoch"+str(epoch_i)+"_1.bin"))
-    annotation(model)
-    """
-    calculate_accuracy(intentdict)
+            torch.save(model.state_dict(),os.path.join(settings.model_path,"scibert_intent_identification_epoch"+str(epoch_i)+".bin"))
+    with torch.no_grad():
+        for i in range(1,6):
+            epoch = i*5
+            test_set = ACLARCDataset(X_test_input_ids,X_test_attention_masks,y_test)
+            test_dataloader = torch.utils.data.DataLoader(test_set, batch_size = 1, shuffle = True, num_workers = os.cpu_count()//2)
+            print("test start")
+            print("test len")
+            print(len(test_dataloader))
+            print("epoch")
+            print(epoch)
+            predicted_labels = []
+            true_labels = []
+            model_path = os.path.join(settings.model_path,"scibert_intent_identification_epoch"+str(epoch)+".bin")
+            model.load_state_dict(torch.load(model_path))
+            for step, batch in tqdm(enumerate(test_dataloader)):
+                b_input_ids = batch[0].cuda()
+                b_attention_masks = batch[1].cuda()
+                b_labels = batch[2].cuda()
+                outputs = model(input_ids=b_input_ids,
+                                attention_mask=b_attention_masks,
+                                 labels=b_labels)
+                predicted = torch.argmax(outputs["logits"].cpu()[0])
+                predicted_labels.append(predicted.item())
+                true_labels.append(b_labels.item())
+            print("macro f1")
+            print(f1_score(true_labels,predicted_labels,average="macro"))
+            print("micro f1")
+            print(f1_score(true_labels,predicted_labels,average="micro"))
+    #annotation(model)
+    #calculate_accuracy(intentdict)
     """
     macro_f1_score = 0.0
     micro_f1_score = 0.0

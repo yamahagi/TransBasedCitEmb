@@ -63,196 +63,118 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_data_intent_identification(textdict):
-    intentn = -1
-    intentdict = {}
-    tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
-    f = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/train.jsonl")
-    X_AASC_input_ids = []
-    X_AASC_attention_masks = []
-    y_AASC = []
-    X_train_input_ids = []
-    X_train_attention_masks = []
-    y_train = []
-    with torch.no_grad():
-        jsl = []
-        for i,line in enumerate(f):
-            js = json.loads(line)
-            jsl.append(js)
-        for js in jsl:
-            if i == 0:
-                continue
-            target_id = js["citing_paper_id"]
-            source_id = js["cited_paper_id"]
-            intent = js["intent"]
-            text = js["text"]
-            if intent not in intentdict:
-                intentn += 1
-                intentdict[intent] = intentn
-            encoded_dict = tokenizer.encode_plus(
-                        text,
-                        add_special_tokens = True, # Special Tokenの追加
-                        max_length = 512,           # 文章の長さを固定（Padding/Trancatinating）
-                        pad_to_max_length = True,# PADDINGで埋める
-                        return_attention_mask = True,   # Attention maksの作成
-                        return_tensors = 'pt',     #  Pytorch tensorsで返す
-                   )
-            if text in textdict and (textdict[text][0] == target_id and textdict[text][1] == source_id):
-                X_AASC_input_ids.append(encoded_dict['input_ids'])
-                X_AASC_attention_masks.append(encoded_dict['attention_mask'])
-                y_AASC.append(intentdict[intent])
-            else:
-                X_train_input_ids.append(encoded_dict['input_ids'])
-                X_train_attention_masks.append(encoded_dict['attention_mask'])
-                y_train.append(intentdict[intent])
-    X_train_input_ids = torch.cat(X_train_input_ids,dim=0)
-    X_train_attention_masks = torch.cat(X_train_attention_masks,dim=0)
-    f = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/test.jsonl")
-    X_test_input_ids = []
-    X_test_attention_masks = []
-    y_test = []
-    with torch.no_grad():
-        jsl = []
-        for i,line in enumerate(f):
-            js = json.loads(line)
-            jsl.append(js)
-        for js in jsl:
-            if i == 0:
-                continue
-            target_id = js["citing_paper_id"]
-            source_id = js["cited_paper_id"]
-            intent = js["intent"]
-            text = js["text"]
-            if intent not in intentdict:
-                intentn += 1
-                intentdict[intent] = intentn
-            encoded_dict = tokenizer.encode_plus(
-                        text,
-                        add_special_tokens = True, # Special Tokenの追加
-                        max_length = 512,           # 文章の長さを固定（Padding/Trancatinating）
-                        pad_to_max_length = True,# PADDINGで埋める
-                        return_attention_mask = True,   # Attention maksの作成
-                        return_tensors = 'pt',     #  Pytorch tensorsで返す
-                   )
-            if text in textdict and (textdict[text][0] == target_id and textdict[text][1] == source_id):
-                X_AASC_input_ids.append(encoded_dict['input_ids'])
-                X_AASC_attention_masks.append(encoded_dict['attention_mask'])
-                y_AASC.append(intentdict[intent])
-            else:
-                X_test_input_ids.append(encoded_dict['input_ids'])
-                X_test_attention_masks.append(encoded_dict['attention_mask'])
-                y_test.append(intentdict[intent])
-    X_test_input_ids = torch.cat(X_test_input_ids,dim=0)
-    X_test_attention_masks = torch.cat(X_test_attention_masks,dim=0)
-    X_AASC_input_ids = torch.cat(X_AASC_input_ids,dim=0)
-    X_AASC_attention_masks = torch.cat(X_AASC_attention_masks,dim=0)
-    return X_train_input_ids,X_train_attention_masks,y_train,X_test_input_ids,X_test_attention_masks,y_test,X_AASC_input_ids,X_AASC_attention_masks,y_AASC
-
 def load_data_intent_identification():
     intentn = -1
     intentdict = {}
     tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
-    f_train = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/train.jsonl")
-    f_test = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/test.jsonl")
+    f = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/train.jsonl")
     X_input_ids = []
     X_attention_masks = []
     y = []
     with torch.no_grad():
-        for f in [f_train,f_test]:
-            jsl = []
-            for i,line in enumerate(f):
-                js = json.loads(line)
-                jsl.append(js)
-            for i,js in enumerate(jsl):
-                if i == 0:
-                    print(js.keys())
-                target_id = js["citing_paper_id"]
-                source_id = js["cited_paper_id"]
-                intent = js["intent"]
-                text = js["text"]
-                if intent not in intentdict:
-                    intentn += 1
-                    intentdict[intent] = intentn
-                encoded_dict = tokenizer.encode_plus(
-                            text,
-                            add_special_tokens = True, # Special Tokenの追加
-                            max_length = 512,           # 文章の長さを固定（Padding/Trancatinating）
-                            pad_to_max_length = True,# PADDINGで埋める
-                            return_attention_mask = True,   # Attention maksの作成
-                            return_tensors = 'pt',     #  Pytorch tensorsで返す
-                       )
-                X_input_ids.append(encoded_dict['input_ids'])
-                X_attention_masks.append(encoded_dict['attention_mask'])
-                y.append(intentdict[intent])
+        jsl = []
+        for i,line in enumerate(f):
+            js = json.loads(line)
+            jsl.append(js)
+        for js in jsl:
+            if i == 0:
+                continue
+            target_id = js["citing_paper_id"]
+            source_id = js["cited_paper_id"]
+            intent = js["intent"]
+            text = js["text"]
+            if intent not in intentdict:
+                intentn += 1
+                intentdict[intent] = intentn
+            encoded_dict = tokenizer.encode_plus(
+                        text,
+                        add_special_tokens = True, # Special Tokenの追加
+                        max_length = 512,           # 文章の長さを固定（Padding/Trancatinating）
+                        pad_to_max_length = True,# PADDINGで埋める
+                        return_attention_mask = True,   # Attention maksの作成
+                        return_tensors = 'pt',     #  Pytorch tensorsで返す
+                   )
+            X_input_ids.append(encoded_dict['input_ids'])
+            X_attention_masks.append(encoded_dict['attention_mask'])
+            y.append(intentdict[intent])
+    f = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/test.jsonl")
+    with torch.no_grad():
+        jsl = []
+        for i,line in enumerate(f):
+            js = json.loads(line)
+            jsl.append(js)
+        for js in jsl:
+            if i == 0:
+                continue
+            target_id = js["citing_paper_id"]
+            source_id = js["cited_paper_id"]
+            intent = js["intent"]
+            text = js["text"]
+            if intent not in intentdict:
+                intentn += 1
+                intentdict[intent] = intentn
+            encoded_dict = tokenizer.encode_plus(
+                        text,
+                        add_special_tokens = True, # Special Tokenの追加
+                        max_length = 512,           # 文章の長さを固定（Padding/Trancatinating）
+                        pad_to_max_length = True,# PADDINGで埋める
+                        return_attention_mask = True,   # Attention maksの作成
+                        return_tensors = 'pt',     #  Pytorch tensorsで返す
+                   )
+            X_input_ids.append(encoded_dict['input_ids'])
+            X_attention_masks.append(encoded_dict['attention_mask'])
+            y.append(intentdict[intent])
     X_input_ids = torch.cat(X_input_ids,dim=0)
     X_attention_masks = torch.cat(X_attention_masks,dim=0)
-    return X_input_ids,X_attention_masks,y,intentdict
-
-def load_data_intent_identification_AASC():
-    intentn = -1
-    intentdict = {}
-    textdict = {}
-    f = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/id2intent.txt")
-    X = []
-    y = []
-    paperdict = defaultdict(dict)
-    for i,line in enumerate(f):
-        if i == 0:
-            continue
-        l = line.rstrip("\n").split("\t")
-        target_id = l[0]
-        source_id = l[1]
-        intent = l[2]
-        text = l[3]
-        if intent not in intentdict:
-            intentn += 1
-            intentdict[intent] = intentn
-        X.append({"target_id":target_id,"source_id":source_id,"text":text})
-        paperdict[target_id][source_id] = intent
-        textdict[text] = (target_id,source_id)
-        y.append(intentdict[intent])
-    return X,y,textdict
+    return X_input_ids,X_attention_masks,y
 
 def load_data_intent_identification_for_tagging():
     tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
-    f_train = "/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/train_intent.csv"
-    f_test = "/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/test_intent.csv"
-    X_input_ids = []
-    X_attention_masks = []
-    X_paper_ids = []
+    ftrain = "/home/ohagi_masaya/TransBasedCitEmb/dataset/PeerRead/train_intent.csv"
+    ftest = "/home/ohagi_masaya/TransBasedCitEmb/dataset/PeerRead/test_intent.csv"
+    X_train_input_ids = []
+    X_train_attention_masks = []
+    X_train_paper_ids = []
+    X_test_input_ids = []
+    X_test_attention_masks = []
+    X_test_paper_ids = []
     print("---data loading---")
     with torch.no_grad():
-        for f in [f_train,f_test]:
-            df = pd.read_csv(f)
-            for i,(target_id,context,source_id) in enumerate(zip(df["target_id"],df["context"],df["source_id"])):
-                citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(context))[:256]
-                input_ids = citation_tokenized
-                word_pad = 256-len(input_ids)
-                adj = torch.ones(len(input_ids), len(input_ids), dtype=torch.int)
-                adj = torch.cat((adj,torch.ones(word_pad,adj.shape[1],dtype=torch.int)),dim=0)
-                adj = torch.cat((adj,torch.zeros(256,word_pad,dtype=torch.int)),dim=1)
-                input_ids += [0]*word_pad
-                X_input_ids.append(torch.tensor(input_ids))
-                X_attention_masks.append(adj)
-                X_paper_ids.append((target_id,source_id))
-                if i % 1000 == 0:
-                    print(i)
-    return X_input_ids,X_attention_masks,X_paper_ids
+        df = pd.read_csv(ftrain)
+        for i,(target_id,context,source_id) in enumerate(zip(df["target_id"],df["context"],df["source_id"])):
+            citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(context))[:256]
+            input_ids = citation_tokenized
+            word_pad = 256-len(input_ids)
+            adj = torch.ones(len(input_ids), len(input_ids), dtype=torch.int)
+            adj = torch.cat((adj,torch.ones(word_pad,adj.shape[1],dtype=torch.int)),dim=0)
+            adj = torch.cat((adj,torch.zeros(256,word_pad,dtype=torch.int)),dim=1)
+            input_ids += [0]*word_pad
+            X_train_input_ids.append(torch.tensor(input_ids))
+            X_train_attention_masks.append(adj)
+            X_train_paper_ids.append((target_id,source_id))
+            if i % 1000 == 0:
+                print(i)
+        df = pd.read_csv(ftest)
+        for i,(target_id,context,source_id) in enumerate(zip(df["target_id"],df["context"],df["source_id"])):
+            citation_tokenized = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(context))[:256]
+            input_ids = citation_tokenized
+            word_pad = 256-len(input_ids)
+            adj = torch.ones(len(input_ids), len(input_ids), dtype=torch.int)
+            adj = torch.cat((adj,torch.ones(word_pad,adj.shape[1],dtype=torch.int)),dim=0)
+            adj = torch.cat((adj,torch.zeros(256,word_pad,dtype=torch.int)),dim=1)
+            input_ids += [0]*word_pad
+            X_test_input_ids.append(torch.tensor(input_ids))
+            X_test_attention_masks.append(adj)
+            X_test_paper_ids.append((target_id,source_id))
+            if i % 1000 == 0:
+                print(i)
+    return X_train_input_ids,X_train_attention_masks,X_train_paper_ids,X_test_input_ids,X_test_attention_masks,X_test_paper_ids
 
 def plot_intent_identification(X_AASC_input_ids,X_AASC_attention_masks,y_AASC,model):
     X = []
     y = []
     i = 0
     with torch.no_grad():
-        """
-        for input_ids,attention_masks,label in zip(X_train_input_ids,X_train_attention_masks,y_train):
-            input_ids = input_ids.unsqueeze(0)
-            attention_masks = attention_masks.unsqueeze(0)
-            y.append(label)
-            label = torch.tensor([label])
-            outputs = model(input_ids=input_ids.cuda(),attention_mask=attention_masks.cuda(),labels=label.cuda())
-            X.append(np.array(outputs["hidden_states"][-1][0][0].cpu()))
-        """
         for input_ids,attention_masks,label in zip(X_AASC_input_ids,X_AASC_attention_masks,y_AASC):
             input_ids = input_ids.unsqueeze(0)
             attention_masks = attention_masks.unsqueeze(0)
@@ -303,15 +225,16 @@ class ACLARCDataset(torch.utils.data.Dataset):
         return out_input_ids,out_attention_masks,out_label
 
 def annotation(model):
-    X_input_ids,X_attention_masks,X_paper_ids = load_data_intent_identification_for_tagging()
+    X_train_input_ids,X_train_attention_masks,X_train_paper_ids,X_test_input_ids,X_test_attention_masks,X_test_paper_ids = load_data_intent_identification_for_tagging()
     model.load_state_dict(torch.load(os.path.join(settings.model_path,"scibert_intent_identification_epoch15.bin")))
     model.cuda()
     model.eval()
     print("---started annotation---")
-    f = open(os.path.join(settings.citation_recommendation_dir,"intent_annotated_AASC.tsv"),"w")
-    f.write("target_id\tsource_id\tintent\n")
+    ftrain = open(os.path.join(settings.citation_recommendation_PeerRead_dir,"train_intent_annotated.csv"),"w")
+    writer = csv.writer(ftrain)
+    writer.writerow(["target_id","source_id","intent"])
     with torch.no_grad():
-        for i,(input_ids,attention_masks,paper_ids) in enumerate(zip(X_input_ids,X_attention_masks,X_paper_ids)):
+        for i,(input_ids,attention_masks,paper_ids) in enumerate(zip(X_train_input_ids,X_train_attention_masks,X_train_paper_ids)):
             target_id = paper_ids[0]
             source_id = paper_ids[1]
             outputs = model(input_ids=input_ids.unsqueeze(0).cuda(),
@@ -319,9 +242,25 @@ def annotation(model):
             logits = outputs["logits"]
             logits = logits.detach().cpu().numpy()
             pred =  list(np.argmax(logits, axis=1))[0]
-            f.write(target_id+"\t"+source_id+"\t"+str(pred)+"\n")
+            writer.writerow([target_id,source_id,pred])
             if i % 1000 == 0:
                 print(i)
+    ftest = open(os.path.join(settings.citation_recommendation_PeerRead_dir,"test_intent_annotated.csv"),"w")
+    writer = csv.writer(ftest)
+    writer.writerow(["target_id","source_id","intent"])
+    with torch.no_grad():
+        for i,(input_ids,attention_masks,paper_ids) in enumerate(zip(X_test_input_ids,X_test_attention_masks,X_test_paper_ids)):
+            target_id = paper_ids[0]
+            source_id = paper_ids[1]
+            outputs = model(input_ids=input_ids.unsqueeze(0).cuda(),
+                            attention_mask=attention_masks.unsqueeze(0).cuda())
+            logits = outputs["logits"]
+            logits = logits.detach().cpu().numpy()
+            pred =  list(np.argmax(logits, axis=1))[0]
+            writer.writerow([target_id,source_id,pred])
+            if i % 1000 == 0:
+                print(i)
+
 
 def calculate_accuracy(intentdict):
     f = open("/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/id2intent.txt")
@@ -352,15 +291,11 @@ def calculate_accuracy(intentdict):
 
 def main():
     args = parse_args()
-    #X,y,textdict = load_data_intent_identification_AASC()
-    #X_train_input_ids,X_train_attention_masks,y_train,X_test_input_ids,X_test_attention_masks,y_test,X_AASC_input_ids,X_AASC_attention_masks,y_AASC = load_data_intent_identification(textdict)
-    X_input_ids,X_attention_masks,y,intentdict = load_data_intent_identification()
-    print(intentdict)
-    #calculate_accuracy(intentdict)
+    X_input_ids,X_attention_masks,y = load_data_intent_identification()
     train_set = ACLARCDataset(X_input_ids,X_attention_masks,y)
     num_label = max(y)+1
     model = BertForSequenceClassification.from_pretrained(
-        "../pretrainedmodel/scibert_scivocab_uncased", # Use the 12-layer BERT model, with an uncased vocab.
+        "/home/ohagi_masaya/TransBasedCitEmb/pretrainedmodel/scibert_scivocab_uncased", # Use the 12-layer BERT model, with an uncased vocab.
         num_labels = num_label, # The number of output labels--2 for binary classification.
         output_attentions = False, # Whether the model returns attentions weights.
         output_hidden_states = True, # Whether the model returns all hidden-states.
@@ -372,7 +307,6 @@ def main():
     train_dataloader = torch.utils.data.DataLoader(train_set, batch_size = args.batch_size, shuffle = True, num_workers = os.cpu_count()//2)
     model.cuda()
     model.train()
-    """
     for epoch_i in range(1, args.epoch+1):
         total_train_loss = 0
         print("epoch: "+str(epoch_i))
@@ -393,86 +327,8 @@ def main():
         avg_train_loss = total_train_loss / len(train_dataloader)
         if epoch_i % 5 == 0:
             print(avg_train_loss)
-            torch.save(model.state_dict(),os.path.join(settings.model_path,"scibert_intent_identification_epoch"+str(epoch_i)+"_1.bin"))
+            torch.save(model.state_dict(),os.path.join(settings.model_path,"scibert_intent_identification_epoch"+str(epoch_i)+".bin"))
     annotation(model)
-    """
-    calculate_accuracy(intentdict)
-    """
-    macro_f1_score = 0.0
-    micro_f1_score = 0.0
-    kf = KFold(n_splits=5)
-    kf.get_n_splits(X_input_ids)
-    for i,(train_index, test_index) in enumerate(kf.split(X_input_ids)):
-        print(i)
-        X_train_input_ids = torch.cat([X_input_ids[index] for index in train_index],dim=0)
-        X_train_attention_masks = torch.cat([X_attention_masks[index] for index in train_index],dim=0)
-        y_train = [y[index] for index in train_index]
-        X_test_input_ids = torch.cat([X_input_ids[index] for index in test_index],dim=0)
-        X_test_attention_masks = torch.cat([X_attention_masks[index] for index in test_index],dim=0)
-        y_test = [y[index] for index in test_index]
-        train_set = ACLARCDataset(X_train_input_ids,X_train_attention_masks,y_train)
-        test_set = ACLARCDataset(X_test_input_ids,X_test_attention_masks,y_test)
-        print("distributions of intent")
-        print(collections.Counter(y_train))
-        print(collections.Counter(y_test))
-        num_label = max(y_train+y_test)+1
-        model = BertForSequenceClassification.from_pretrained(
-            "../pretrainedmodel/scibert_scivocab_uncased", # Use the 12-layer BERT model, with an uncased vocab.
-            num_labels = num_label, # The number of output labels--2 for binary classification.
-            output_attentions = False, # Whether the model returns attentions weights.
-            output_hidden_states = True, # Whether the model returns all hidden-states.
-        )
-        optimizer = AdamW(model.parameters(),
-                      lr = 5e-6, # args.learning_rate - default is 5e-5, our notebook had 2e-5
-                      eps = 1e-8 # args.adam_epsilon  - default is 1e-8.
-                    )
-        train_dataloader = torch.utils.data.DataLoader(train_set, batch_size = args.batch_size, shuffle = True, num_workers = os.cpu_count()//2)
-        model.cuda()
-        model.train()
-        for epoch_i in range(0, args.epoch):
-            total_train_loss = 0
-            for step, batch in enumerate(train_dataloader):
-                optimizer.zero_grad()
-                b_input_ids = batch[0].cuda()
-                b_attention_masks = batch[1].cuda()
-                b_labels = batch[2].cuda()
-                outputs = model(input_ids=b_input_ids,
-                                attention_mask=b_attention_masks,
-                                 labels=b_labels)
-                loss = outputs["loss"]
-                total_train_loss += loss.item()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                optimizer.step()
-            avg_train_loss = total_train_loss / len(train_dataloader)
-            if epoch_i % 5 == 0:
-                print(avg_train_loss)
-        total_eval_accuracy = 0
-        total_eval_loss = 0
-        pred = []
-        seikail = []
-        model.eval()
-        test_dataloader = torch.utils.data.DataLoader(test_set, batch_size = args.batch_size, shuffle = False, num_workers = os.cpu_count()//2)
-        with torch.no_grad():
-            for batch in test_dataloader:
-                b_input_ids = batch[0].cuda()
-                b_attention_masks = batch[1].cuda()
-                b_labels = batch[2].cuda()
-                outputs = model(input_ids=b_input_ids,
-                                attention_mask=b_attention_masks,
-                                 labels=b_labels)
-                loss = outputs["loss"]
-                logits = outputs["logits"]
-                total_eval_loss += loss.item()
-                logits = logits.detach().cpu().numpy()
-                label_ids = b_labels.to('cpu').numpy()
-                pred += list(np.argmax(logits, axis=1))
-                seikail += list(label_ids)
-        macro_f1_score += f1_score(seikail, pred, average='macro')
-        micro_f1_score += f1_score(seikail, pred, average='micro')
-    print(macro_f1_score/5)
-    print(micro_f1_score/5)
-    """
 
 
 if __name__ == '__main__':
