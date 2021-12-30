@@ -24,6 +24,7 @@ import random
 import pickle
 
 from sklearn import svm
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score,f1_score
 from sklearn.decomposition import PCA
 from matplotlib import pyplot
@@ -121,9 +122,9 @@ def predict(args,epoch,model,ent_vocab,test_set,source_times_dict):
     l_all = 0
     l_prev = 0
     fw = open("../results/"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".txt","w")
-    fcsv = open("../results/"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".csv","w")
-    writer = csv.writer(fcsv)
-    writer.writerow(["target_id","source_id","top5","MRR"])
+    #fcsv = open("../results/"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".csv","w")
+    #writer = csv.writer(fcsv)
+    #writer.writerow(["target_id","source_id","top5","MRR"])
     score_per_times = defaultdict(list)
     with torch.no_grad():
         for (inputs,labels) in test_dataloader:
@@ -142,7 +143,7 @@ def predict(args,epoch,model,ent_vocab,test_set,source_times_dict):
                 print(l_all)
                 print(mrr_all/l_all)
             #csvにtarget_idとsource_id,rank_array上位5つとMRRを書き込む
-            writer.writerow([inputs["target_id"],inputs["source_id"],rank_array[:5],results_dict["MRR"]])
+            #writer.writerow([inputs["target_id"],inputs["source_id"],rank_array[:5],results_dict["MRR"]])
         s = ""
         s += "MRR\n" + str(mrr_all/l_all)+"\n"
         s += "Recallat5\n" + str(Recallat5_all/l_all)+"\n"
@@ -218,10 +219,15 @@ def node_classification(args,epoch,model,ent_vocab):
 
 def intent_identification(args,epoch,model,ent_vocab):
     #fw = open("../results/"+"batch_size"+str(args.batch_size)+"epoch"+str(epoch)+"dataset"+str(args.dataset)+"WINDOW_SIZE"+str(args.WINDOW_SIZE)+"MAX_LEN"+str(args.MAX_LEN)+"pretrained_model"+str(args.pretrained_model)+"_"+args.mask_type+"_intentidentification.txt","w")
-    X,y = load_data_intent_identification_with_context(model,ent_vocab,args.MAX_LEN,args.WINDOW_SIZE)
+    #X,y = load_data_intent_identification_with_context(model,ent_vocab,args.MAX_LEN,args.WINDOW_SIZE)
+    X,y = load_data_intent_identification_with_context(args,model,ent_vocab)
+    print(len(X))
+    print(len(X[0]))
+    print(len(X[0][0]))
     X_concat = [np.concatenate([x[0],x[1]]) for x in X]
     X_minus = [x[0]-x[1] for x in X]
     print("intent identification data load done")
+    """
     print("PCA start")
     pca = PCA(n_components=2)
     pca.fit(X_concat)
@@ -262,27 +268,31 @@ def intent_identification(args,epoch,model,ent_vocab):
         X_color_y = np.array([X_place[1] for X_place in X_color])
         ax.scatter(X_color_x,X_color_y,c=color)
     pyplot.savefig("images/TransBasedCitEmb_intent_identification_minus.png") # 保存
+    """
     l = [i for i in range(len(X))]
     #fix random seed to 10
     random.seed(10)
     random.shuffle(l)
     dict1 = {}
+    macro_f1 = 0
+    micro_f1 = 0
     for epoch in range(5):
         if epoch == 0:
-            X_train = [X[i] for i in l[:len(l)//5]]
+            X_train = [X_concat[i] for i in l[:len(l)//5]]
             y_train = [y[i] for i in l[:len(l)//5]]
-            X_test = [X[i] for i in l[len(l)//5:]]
+            X_test = [X_concat[i] for i in l[len(l)//5:]]
             y_test = [y[i] for i in l[len(l)//5:]]
         elif epoch == 4:
-            X_train = [X[i] for i in l[len(l)*epoch//5:]]
+            X_train = [X_concat[i] for i in l[len(l)*epoch//5:]]
             y_train = [y[i] for i in l[len(l)*epoch//5:]]
-            X_test = [X[i] for i in l[:len(l)*epoch//5]]
+            X_test = [X_concat[i] for i in l[:len(l)*epoch//5]]
             y_test = [y[i] for i in l[:len(l)*epoch//5]]
         else:
-            X_train = [X[i] for i in l[len(l)*epoch//5:len(l)*(epoch+1)//5]]
+            X_train = [X_concat[i] for i in l[len(l)*epoch//5:len(l)*(epoch+1)//5]]
             y_train = [y[i] for i in l[len(l)*epoch//5:len(l)*(epoch+1)//5]]
-            X_test = [X[i] for i in l[:len(l)*epoch//5]+l[len(l)*(epoch+1)//5:]]
+            X_test = [X_concat[i] for i in l[:len(l)*epoch//5]+l[len(l)*(epoch+1)//5:]]
             y_test = [y[i] for i in l[:len(l)*epoch//5]+l[len(l)*(epoch+1)//5:]]
+        """
         Cs = [2 , 2**5, 2 **10]
         gammas = [2 ** -9, 2 ** -6, 2** -3,2 ** 3, 2 ** 6, 2 ** 9]
         svs = [svm.SVC(C=C, gamma=gamma).fit(X_train, y_train) for C, gamma in product(Cs, gammas)]
@@ -299,12 +309,24 @@ def intent_identification(args,epoch,model,ent_vocab):
                 dict1[s1]["ミクロ平均"] += f1_score(y_test, test_label,average="micro")
                 for key in dict1[s1]["分類結果"]:
                     dict1[s1]["分類結果"][key] += collections.Counter(test_label)[key]
+        """
+        randomforest = RandomForestClassifier()
+        randomforest.fit(X_train,y_train)
+        test_label = randomforest.predict(X_test)
+        macro_f1 += f1_score(y_test, test_label,average="macro")
+        micro_f1 += f1_score(y_test, test_label,average="micro")
+        print("training done")
+    print("results")
+    print(macro_f1/5)
+    print(micro_f1/5)
+    """
     for sv,product1 in zip(svs,products):
         s1 = "C:"+str(product1[0])+","+"gamma:"+str(product1[1])
         print("正解率＝", dict1[s1]["正解率"]/5)
         print("マクロ平均＝", dict1[s1]["マクロ平均"]/5)
         print("ミクロ平均＝", dict1[s1]["ミクロ平均"]/5)
         print(dict1[s1]["分類結果"])
+    """
 
 class Collate_fn():
     def __init__(self,MAX_LEN):
@@ -392,7 +414,7 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=1.0)
 
-    model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".bin"
+    model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+"_number1.bin"
     #model_name = "model_"+"epoch"+str(args.epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+"_number1.bin"
     pretrained_model_path = os.path.join(settings.model_path,model_name)
     print(model_name)
@@ -431,12 +453,12 @@ def main():
     if args.predict:
         for i in range(1,args.epoch//5+1):
             epoch = i*5
-            model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".bin"
+            model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+"_number1.bin"
             #model_name = "model_"+"epoch"+str(epoch)+"_batchsize"+str(args.batch_size)+"_learningrate"+str(args.lr)+"_data"+str(args.dataset)+"_WINDOWSIZE"+str(args.WINDOW_SIZE)+"_MAXLEN"+str(args.MAX_LEN)+"_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+"_number1.bin"
             model.load_state_dict(torch.load(os.path.join(settings.model_path,model_name)))
             model.eval()
             #save_embeddings(model,ent_vocab,args.MAX_LEN,args.WINDOW_SIZE)
-            predict(args,epoch,model,ent_vocab,train_set,source_times_dict)
+            #predict(args,epoch,model,ent_vocab,train_set,source_times_dict)
             #node_classification(args,epoch,model,ent_vocab)
             intent_identification(args,epoch,model,ent_vocab)
 

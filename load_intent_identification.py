@@ -86,6 +86,83 @@ def load_raw_data():
                 paper_dict[paper] = elements
     return X,y,paper_dict
 
+def load_raw_data_PeerRead(args):
+    dftrain = pd.read_csv(os.path.join(settings.citation_recommendation_PeerRead_dir,"train.csv"))
+    dftest = pd.read_csv(os.path.join(settings.citation_recommendation_PeerRead_dir,"test.csv"))
+    tail_train_dict = defaultdict(dict)
+    head_train_dict = defaultdict(dict)
+    for source_id,target_id,left_citated_text,right_citated_text in zip(dftrain["source_id"],dftrain["target_id"],dftrain["left_citated_text"],dftrain["right_citated_text"]):
+        tail_train_dict[source_id][target_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
+        head_train_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
+    tail_train_number = 0
+    head_train_number = 0
+    X = []
+    y = []
+    intentdict = {}
+    intentn = -1
+    paper_dict = {}
+    df = pd.read_csv(os.path.join(settings.citation_recommendation_PeerRead_dir,"test_intent_annotated.csv"))
+    for target_id,source_id,intent in zip(df["target_id"],df["source_id"],df["intent"]):
+        intent = int(intent)
+        X.append((target_id,source_id))
+        if intent not in intentdict:
+            intentn += 1
+            intentdict[intent] = intentn
+        y.append(intentdict[intent])
+    for (target_id,source_id) in X:
+        for paper in [target_id,source_id]:
+            if paper not in paper_dict:
+                elements = []
+                if paper in tail_train_dict and tail_train_dict[paper] != {}:
+                    tail_train_number += 1
+                    elements = [{"data":tail_train_dict[paper][target_id],"target_id":target_id,"source_id":paper,"th":"tail"} for target_id in list(tail_train_dict[paper].keys())]
+                elif paper in head_train_dict and head_train_dict[paper] != {}:
+                    head_train_number += 1
+                    elements = [{"data":head_train_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_train_dict[paper].keys())]
+                else:
+                    print("Unfound: "+paper)
+                paper_dict[paper] = elements
+    return X,y,paper_dict
+
+def load_raw_data_SYNTHCI_AASC(args):
+    dftrain = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train.csv"),quotechar="'")
+    dftest = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"test.csv"),quotechar="'")
+    tail_train_dict = defaultdict(dict)
+    head_train_dict = defaultdict(dict)
+    for source_id,target_id,left_citated_text,right_citated_text in zip(dftrain["source_id"],dftrain["target_id"],dftrain["left_citated_text"],dftrain["right_citated_text"]):
+        tail_train_dict[source_id][target_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
+        head_train_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
+    tail_train_number = 0
+    head_train_number = 0
+    X = []
+    y = []
+    intentdict = {}
+    intentn = -1
+    paper_dict = {}
+    df = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"test_intent_annotated.csv"))
+    for target_id,source_id,intent in zip(df["target_id"],df["source_id"],df["intent"]):
+        intent = int(intent)
+        X.append((target_id,source_id))
+        if intent not in intentdict:
+            intentn += 1
+            intentdict[intent] = intentn
+        y.append(intentdict[intent])
+    for (target_id,source_id) in X:
+        for paper in [target_id,source_id]:
+            if paper not in paper_dict:
+                elements = []
+                if paper in tail_train_dict and tail_train_dict[paper] != {}:
+                    tail_train_number += 1
+                    elements = [{"data":tail_train_dict[paper][target_id],"target_id":target_id,"source_id":paper,"th":"tail"} for target_id in list(tail_train_dict[paper].keys())]
+                elif paper in head_train_dict and head_train_dict[paper] != {}:
+                    head_train_number += 1
+                    elements = [{"data":head_train_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_train_dict[paper].keys())]
+                else:
+                    print("Unfound: "+paper)
+                paper_dict[paper] = elements
+    return X,y,paper_dict
+
+
 #それぞれの辞書をinput_idに変換
 def convert_data(paper_dict,ent_vocab,MAX_LEN,WINDOW_SIZE):
     tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
@@ -162,17 +239,30 @@ def get_embeddings(model,paper_dict,MAX_LEN,WINDOW_SIZE):
                 print(i)
     return paper_embeddings_dict
 
-def load_data_intent_identification_with_context(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
-    X,y,paper_dict = load_raw_data()
-    converted_path = os.path.join(settings.intent_identification_dir,"intent_identification.json")
+def load_data_intent_identification_with_context(args,model,ent_vocab):
+    if args.dataset == "AASC":
+        #X,y,paper_dict = load_raw_data(args)
+        X,y,paper_dict = load_raw_data_SYNTHCI_AASC(args)
+        intent_identification_dir = settings.intent_identification_dir
+    else:
+        X,y,paper_dict = load_raw_data_PeerRead(args)
+        intent_identification_dir = settings.intent_identification_PeerRead_dir
+    converted_path = os.path.join(intent_identification_dir,"intent_identification.json")
     if os.path.exists(converted_path):
         with open(converted_path) as f:
             paper_dict = json.load(f)
     else:
-        paper_dict = convert_data(paper_dict,ent_vocab,MAX_LEN,WINDOW_SIZE)
+        paper_dict = convert_data(paper_dict,ent_vocab,args.MAX_LEN,args.WINDOW_SIZE)
         with open(converted_path,"w") as f:
             json.dump(paper_dict,f)
-    paper_embeddings_dict = get_embeddings(model,paper_dict,MAX_LEN,WINDOW_SIZE)
+    converted_path = os.path.join(intent_identification_dir,"intent_identification.binaryfile")
+    if os.path.exists(converted_path):
+        with open(converted_path,"rb") as f:
+            paper_embeddings_dict = pickle.load(f)
+    else:
+        paper_embeddings_dict = get_embeddings(model,paper_dict,args.MAX_LEN,args.WINDOW_SIZE)
+        with open(converted_path,"wb") as f:
+            pickle.dump(paper_embeddings_dict,f)
     X = [(paper_embeddings_dict[target_id],paper_embeddings_dict[source_id]) for (target_id,source_id) in X]
     return X,y
 

@@ -9,6 +9,7 @@ node_classification_dir = "/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/"
 node_classification_PeerRead_dir = "/home/ohagi_masaya/TransBasedCitEmb/dataset/PeerRead/"
 #dataset directory for citation intent identification using citation network embeddings
 intent_identification_dir = "/home/ohagi_masaya/TransBasedCitEmb/dataset/citationintent/scicite/acl-arc-dataset/"
+intent_identification_PeerRead_dir = "/home/ohagi_masaya/TransBasedCitEmb/dataset/PeerRead"
 #pretrained scibert directory
 pretrained_scibert_path = '/home/ohagi_masaya/TransBasedCitEmb/pretrainedmodel/scibert_scivocab_uncased'
 #output directory for trained model
