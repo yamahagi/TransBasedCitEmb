@@ -29,6 +29,7 @@ Traceback (most recent call last):
   File "<frozen zipimport>", line 713, in _get_module_code
   File "<frozen zipimport>", line 647, in _compile_source
 KeyboardInterrupt
+<<<<<<< HEAD
 Traceback (most recent call last):
   File "run_cite.py", line 10, in <module>
     from transformers import BertConfig, BertTokenizer, BertForMaskedLM
@@ -311,3 +312,5 @@ Counter({0: 1283, 4: 1})
 マクロ平均＝ 0.049547093733140236
 ミクロ平均＝ 0.40809968847352024
 Counter({0: 1283, 4: 1})
+=======
+>>>>>>> b703fe9ae7347c8f0e407772d0338d1fac934353

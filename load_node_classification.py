@@ -337,6 +337,37 @@ def load_data_SVM_from_pkl():
         y_test.append(taskdict[task])
     return X_train,y_train,X_test,y_test
 
+def load_data_SVM_from_pkl():
+    paper_embeddings_dict = pickle.load(open(os.path.join(settings.citation_recommendation_dir,"AASC_embeddings.pkl"),"rb"))
+    ftrain = open(os.path.join(settings.node_classification_dir,"title2task_train.txt"))
+    ftest = open(os.path.join(settings.node_classification_dir,"title2task_test.txt"))
+    X_train = []
+    y_train = []
+    taskdict = {}
+    taskn = -1
+    alln = 0
+    for line in ftrain:
+        l = line[:-1].split("\t")
+        paper = l[0]
+        task = l[1]
+        X_train.append(paper_embeddings_dict[paper])
+        if task not in taskdict:
+            taskn += 1
+            taskdict[task] = taskn
+        y_train.append(taskdict[task])
+    X_test = []
+    y_test = []
+    for line in ftest:
+        l = line[:-1].split("\t")
+        paper = l[0]
+        task = l[1]
+        X_test.append(paper_embeddings_dict[paper])
+        if task not in taskdict:
+            taskn += 1
+            taskdict[task] = taskn
+        y_test.append(taskdict[task])
+    return X_train,y_train,X_test,y_test
+
 #get embeddings for each node by taking average of contexts for all layer
 def load_data_SVM_with_context_all_layer(arg,smodel,ent_vocab,MAX_LEN,WINDOW_SIZE):
     X_train,y_train,X_test,y_test = load_raw_data()

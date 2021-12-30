@@ -48,6 +48,7 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=16, help="batch size")
     parser.add_argument('--frequency', type=int, default=5, help="frequency to remove rare entity")
     parser.add_argument('--lr', type=float, default=5e-5, help="learning rate")
+    parser.add_argument('--lr', type=float, default=8e-5, help="learning rate")
     parser.add_argument('--gamma', type=float, default=0.8, help="gamma for StructureAwareCrossEntropy")
     parser.add_argument('--epoch', type=int, default=5, help="number of epochs")
     parser.add_argument('--WINDOW_SIZE', type=int, default=125,choices=[125,250], help="the length of context length")
@@ -174,6 +175,9 @@ def node_classification(args,epoch,model,ent_vocab):
         pyplot.savefig("images/TransBasedCitEmb_table.png")
         pyplot.close()
     X_train,y_train,X_test,y_test,papers_train,papers_test = load_data_SVM_with_context(args,model,ent_vocab,args.MAX_LEN,args.WINDOW_SIZE)
+=======
+    X_train,y_train,X_test,y_test = load_data_SVM_with_context(args,model,ent_vocab,args.MAX_LEN,args.WINDOW_SIZE)
+>>>>>>> b703fe9ae7347c8f0e407772d0338d1fac934353
     #X_train,y_train,X_test,y_test = load_data_SVM_from_linear(model,ent_vocab)
     #draw_table(X_train+X_test,y_train+y_test)
     print("SVM data load done")
@@ -400,7 +404,6 @@ def main():
         train_set, test_set, ent_vocab = load_PeerRead_graph_data(args)
     num_ent = len(ent_vocab)
     adj = make_adjacent_matrix(train_set)
-
     #train data内のcited paperの分布を調べる
     source_times_dict = count_times(args,ent_vocab)
     #print(source_times_dict)
