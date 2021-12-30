@@ -13,16 +13,32 @@ import pickle
 import settings
 import json
 
+from itertools import product
+import collections
+
+from sklearn import svm
+from sklearn.metrics import accuracy_score,f1_score
+from sklearn.decomposition import PCA
+from matplotlib import pyplot
+
+
 #extract node classification data
 #for each node in node classification data, collect all contexts for that
 #if there is data whose tail node is what we want to collect, we collect all of them
 #else, we collect all data whose head node is what we want to collect
-def load_raw_data():
-    dftrain5 = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train_frequency5.csv"),quotechar="'")
-    dftrain = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train.csv"),quotechar="'")
-    dftest = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"test.csv"),quotechar="'")
-    ftrain = open(os.path.join(settings.node_classification_dir,"title2task_train.txt"))
-    ftest = open(os.path.join(settings.node_classification_dir,"title2task_test.txt"))
+def load_raw_data(args):
+    if args.dataset == "AASC":
+        dftrain5 = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train_frequency5.csv"),quotechar="'")
+        dftrain = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train.csv"),quotechar="'")
+        dftest = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"test.csv"),quotechar="'")
+        ftrain = open(os.path.join(settings.node_classification_dir,"title2task_train.txt"))
+        ftest = open(os.path.join(settings.node_classification_dir,"title2task_test.txt"))
+    else:
+        dftrain5 = pd.read_csv(os.path.join(settings.citation_recommendation_PeerRead_dir,"train_frequency5.csv"))
+        dftrain = pd.read_csv(os.path.join(settings.citation_recommendation_PeerRead_dir,"train.csv"))
+        dftest = pd.read_csv(os.path.join(settings.citation_recommendation_PeerRead_dir,"test.csv"))
+        ftrain = open(os.path.join(settings.node_classification_PeerRead_dir,"title2task_PWCode_train.txt"))
+        ftest = open(os.path.join(settings.node_classification_PeerRead_dir,"title2task_PWCode_test.txt"))
     tail_train5_dict = defaultdict(dict)
     head_train5_dict = defaultdict(dict)
     tail_all_dict = defaultdict(dict)
@@ -36,11 +52,13 @@ def load_raw_data():
         head_all_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
         both_all_dict[source_id][target_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
         both_all_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
+    """
     for source_id,target_id,left_citated_text,right_citated_text in zip(dftest["source_id"],dftest["target_id"],dftest["left_citated_text"],dftest["right_citated_text"]):
         tail_all_dict[source_id][target_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
         head_all_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
         both_all_dict[source_id][target_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
         both_all_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
+    """
     tail5_number = 0
     head5_number = 0
     tailall_number = 0
@@ -63,6 +81,10 @@ def load_raw_data():
         elif paper in head_train5_dict and head_train5_dict[paper] != {}:
             head5_number += 1
             elements = [{"data":head_train5_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_train5_dict[paper].keys())]
+        else:
+            elements = [{"data":tail_all_dict[paper][target_id],"target_id":target_id,"source_id":paper,"th":"tail"} for target_id in list(tail_all_dict[paper].keys())] + [{"data":head_all_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_all_dict[paper].keys())]
+        if len(elements) == 0:
+            print(paper)
         X_train.append(elements)
         if task not in taskdict:
             taskn += 1
@@ -91,16 +113,28 @@ def load_raw_data():
         elif paper in head_train5_dict and head_train5_dict[paper] != {}:
             head5_number += 1
             elements = [{"data":head_train5_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_train5_dict[paper].keys())]
+        else:
+            elements = [{"data":tail_all_dict[paper][target_id],"target_id":target_id,"source_id":paper,"th":"tail"} for target_id in list(tail_all_dict[paper].keys())] + [{"data":head_all_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_all_dict[paper].keys())] 
+        if len(elements) == 0:
+            print(paper)
         X_test.append(elements)
         if task not in taskdict:
             taskn += 1
             taskdict[task] = taskn
         y_test.append(taskdict[task])
+    print("lens")
+    print(len(X_train))
+    print(len(y_train))
+    print(len(X_test))
+    print(len(y_test))
     return X_train,y_train,X_test,y_test
 
 #convert each node into input_id
-def convert_data(datas,ent_vocab,MAX_LEN,WINDOW_SIZE):
-    tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
+def convert_data(args,datas,ent_vocab,MAX_LEN,WINDOW_SIZE):
+    if args.pretrained_model == "scibert":
+        tokenizer =  BertTokenizer.from_pretrained(settings.pretrained_scibert_path, do_lower_case =False)
+    else:
+        tokenizer =  BertTokenizer.from_pretrained("bert-base-uncased", do_lower_case =False)
     converted_datas = []
     converted_elements = []
     for i,elements in enumerate(datas):
@@ -225,46 +259,101 @@ def get_embeddings_all_layer(model,datas,MAX_LEN,WINDOW_SIZE):
                 print(i)
     return X_embeddings
 
+def load_papers(args):
+    if args.dataset == "AASC":
+        ftrain = open(os.path.join(settings.node_classification_dir,"title2task_train.txt"))
+        ftest = open(os.path.join(settings.node_classification_dir,"title2task_test.txt"))
+    else:
+        ftrain = open(os.path.join(settings.node_classification_PeerRead_dir,"title2task_PWCode_train.txt"))
+        ftest = open(os.path.join(settings.node_classification_PeerRead_dir,"title2task_PWCode_test.txt"))
+    papers_train = []
+    for i,line in enumerate(ftrain):
+        l = line[:-1].split("\t")
+        paper_id = l[0]
+        papers_train.append(paper_id)
+    papers_test = []
+    for i,line in enumerate(ftest):
+        l = line[:-1].split("\t")
+        paper_id = l[0]
+        papers_test.append(paper_id)
+    return papers_train,papers_test
+
 #get embeddings for each node by taking average of contexts
-def load_data_SVM_with_context(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
-    X_train,y_train,X_test,y_test = load_raw_data()
-    converted_path_train = os.path.join(settings.citation_recommendation_dir,"SVM_train.json")
-    converted_path_test = os.path.join(settings.citation_recommendation_dir,"SVM_test.json")
+def load_data_SVM_with_context(args,model,ent_vocab,MAX_LEN,WINDOW_SIZE):
+    X_train,y_train,X_test,y_test = load_raw_data(args)
+    if args.dataset == "AASC":
+        converted_path_train = os.path.join(settings.citation_recommendation_dir,"SVM_train_"+args.pretrained_model+".json")
+        converted_path_test = os.path.join(settings.citation_recommendation_dir,"SVM_test_"+args.pretrained_model+".json")
+    else:
+        converted_path_train = os.path.join(settings.citation_recommendation_PeerRead_dir,"SVM_train_"+args.pretrained_model+".json")
+        converted_path_test = os.path.join(settings.citation_recommendation_PeerRead_dir,"SVM_test_"+args.pretrained_model+".json")
     if os.path.exists(converted_path_train):
         with open(converted_path_train) as f:
             X_train = json.load(f)
     else:
-        X_train = convert_data(X_train,ent_vocab,MAX_LEN,WINDOW_SIZE)
+        X_train = convert_data(args,X_train,ent_vocab,MAX_LEN,WINDOW_SIZE)
         with open(converted_path_train,"w") as f:
             json.dump(X_train,f)
     if os.path.exists(converted_path_test):
         with open(converted_path_test) as f:
             X_test = json.load(f)
     else:
-        X_test = convert_data(X_test,ent_vocab,MAX_LEN,WINDOW_SIZE)
+        X_test = convert_data(args,X_test,ent_vocab,MAX_LEN,WINDOW_SIZE)
         with open(converted_path_test,"w") as f:
             json.dump(X_test,f)
     X_train = get_embeddings(model,X_train,MAX_LEN,WINDOW_SIZE)
     X_test = get_embeddings(model,X_test,MAX_LEN,WINDOW_SIZE)
+    papers_train,papers_test = load_papers(args)
+    return X_train,y_train,X_test,y_test,papers_train,papers_test
+
+def load_data_SVM_from_pkl():
+    paper_embeddings_dict = pickle.load(open(os.path.join(settings.citation_recommendation_dir,"AASC_embeddings.pkl"),"rb"))
+    ftrain = open(os.path.join(settings.node_classification_dir,"title2task_train.txt"))
+    ftest = open(os.path.join(settings.node_classification_dir,"title2task_test.txt"))
+    X_train = []
+    y_train = []
+    taskdict = {}
+    taskn = -1
+    alln = 0
+    for line in ftrain:
+        l = line[:-1].split("\t")
+        paper = l[0]
+        task = l[1]
+        X_train.append(paper_embeddings_dict[paper])
+        if task not in taskdict:
+            taskn += 1
+            taskdict[task] = taskn
+        y_train.append(taskdict[task])
+    X_test = []
+    y_test = []
+    for line in ftest:
+        l = line[:-1].split("\t")
+        paper = l[0]
+        task = l[1]
+        X_test.append(paper_embeddings_dict[paper])
+        if task not in taskdict:
+            taskn += 1
+            taskdict[task] = taskn
+        y_test.append(taskdict[task])
     return X_train,y_train,X_test,y_test
 
 #get embeddings for each node by taking average of contexts for all layer
-def load_data_SVM_with_context_all_layer(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
+def load_data_SVM_with_context_all_layer(arg,smodel,ent_vocab,MAX_LEN,WINDOW_SIZE):
     X_train,y_train,X_test,y_test = load_raw_data()
-    converted_path_train = os.path.join(settings.citation_recommendation_dir,"SVM_train.json")
-    converted_path_test = os.path.join(settings.citation_recommendation_dir,"SVM_test.json")
+    converted_path_train = os.path.join(settings.citation_recommendation_dir,"SVM_train"+args.pretrained_model+".json")
+    converted_path_test = os.path.join(settings.citation_recommendation_dir,"SVM_test"+args.pretrained_model+".json")
     if os.path.exists(converted_path_train):
         with open(converted_path_train) as f:
             X_train = json.load(f)
     else:
-        X_train = convert_data(X_train,ent_vocab,MAX_LEN,WINDOW_SIZE)
+        X_train = convert_data(args,X_train,ent_vocab,MAX_LEN,WINDOW_SIZE)
         with open(converted_path_train,"w") as f:
             json.dump(X_train,f)
     if os.path.exists(converted_path_test):
         with open(converted_path_test) as f:
             X_test = json.load(f)
     else:
-        X_test = convert_data(X_test,ent_vocab,MAX_LEN,WINDOW_SIZE)
+        X_test = convert_data(args,X_test,ent_vocab,MAX_LEN,WINDOW_SIZE)
         with open(converted_path_test,"w") as f:
             json.dump(X_test,f)
     X_trains = get_embeddings_all_layer(model,X_train,MAX_LEN,WINDOW_SIZE)
@@ -467,5 +556,36 @@ def load_data_SVM_COKE(model,ent_vocab):
     return X_train,y_train,X_test,y_test
 
 if __name__ == "__main__":
-    ent_vocab = build_ent_vocab("/home/ohagi_masaya/TransBasedCitEmb/dataset/AASC/train.csv")
-    load_data_SVM_with_context(ent_vocab)
+    X_train,y_train,X_test,y_test = load_data_SVM_from_pkl()
+    print("SVM data load done")
+    print("training start")
+    print("PCA start")
+    pca = PCA(n_components=2)
+    pca.fit(X_test)
+    X_test_visualization = pca.transform(X_test)
+    print("PCA done: " + str(len(X_test)))
+    print("Y length: " + str(len(y_test)))
+    print("visualization start")
+    fig, ax = pyplot.subplots(figsize=(20,20))
+    X_test_colors = [[] for _ in range(max(y_test)+1)]
+    y_test_colors = [[] for _ in range(max(y_test)+1)]
+    colors_name = ["black","grey","tomato","saddlebrown","palegoldenrod","olivedrab","cyan","steelblue","midnightblue","darkviolet","magenta","pink","yellow"]
+    for x,y in zip(X_test_visualization,y_test):
+        X_test_colors[y].append(x)
+        y_test_colors[y].append(y)
+    for X_color,color in zip(X_test_colors,colors_name):
+        X_color_x = np.array([X_place[0] for X_place in X_color])
+        X_color_y = np.array([X_place[1] for X_place in X_color])
+        ax.scatter(X_color_x,X_color_y,c=color)
+    pyplot.savefig("images/TransBasedCitEmb_pkl.png") # 保存
+    Cs = [2 , 2**5, 2 **10]
+    gammas = [2 ** -9, 2 ** -6, 2** -3,2 ** 3, 2 ** 6, 2 ** 9]
+    svs = [svm.SVC(C=C, gamma=gamma).fit(X_train, y_train) for C, gamma in product(Cs, gammas)]
+    products = [(C,gamma) for C,gamma in product(Cs,gammas)]
+    print("training done")
+    for sv,product1 in zip(svs,products):
+        test_label = sv.predict(X_test)
+        print("正解率＝", accuracy_score(y_test, test_label))
+        print("マクロ平均＝", f1_score(y_test, test_label,average="macro"))
+        print("ミクロ平均＝", f1_score(y_test, test_label,average="micro"))
+        print(collections.Counter(test_label))

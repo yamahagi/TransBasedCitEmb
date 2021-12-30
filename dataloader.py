@@ -11,6 +11,8 @@ import numpy as np
 import random
 import settings
 
+from collections import defaultdict
+
 #make masked paper prediction data
 def make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,tokenizer,ent_vocab,mask_position):
     #mask cited paper(source_id)
@@ -44,7 +46,7 @@ def make_MPP_data(dic_data,WINDOW_SIZE,MAX_LEN,tokenizer,ent_vocab,mask_position
         position_ids.extend([3+i for i in range(len(left_citation_tokenized[-WINDOW_SIZE:] + [ent_vocab[source_id]] + right_citation_tokenized[:WINDOW_SIZE]))])
         masked_ids.extend([-1]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [-1] + [-1]*len(right_citation_tokenized[:WINDOW_SIZE]))
         token_type_ids.extend([0]*len(left_citation_tokenized[-WINDOW_SIZE:]) + [1] + [0]*len(right_citation_tokenized[:WINDOW_SIZE]))
-    data = {'input_ids': citationcontextl[:MAX_LEN],'masked_lm_labels' : masked_ids[:MAX_LEN],'position_ids': position_ids[:MAX_LEN],'token_type_ids': token_type_ids[:MAX_LEN]}
+    data = {'input_ids': citationcontextl[:MAX_LEN],'masked_lm_labels' : masked_ids[:MAX_LEN],'position_ids': position_ids[:MAX_LEN],'token_type_ids': token_type_ids[:MAX_LEN],"source_id":source_id,"target_id":target_id}
     return data
 
 def make_json(df,jsonpath,tokenizer):
@@ -65,7 +67,7 @@ def make_json(df,jsonpath,tokenizer):
 
 
 class PeerReadDataSet(Dataset):
-    def __init__(self, path, ent_vocab, WINDOW_SIZE, MAX_LEN, pretrained_model):
+    def __init__(self, path, ent_vocab, WINDOW_SIZE, MAX_LEN, pretrained_model,mode="train"):
         self.path = path
         self.dirname = os.path.dirname(path)
         self.filename = os.path.basename(path)
@@ -220,16 +222,18 @@ def load_PeerRead_graph_data(args):
             wtest.writerow([target_id,left_citated_text,right_citated_text,source_id])
         ftest_fre.close()
         entitylist = list(set(list(dftrain["source_id"].values) + list(dftrain["target_id"].values) + list(dftest["source_id"].values) + list(dftest["target_id"].values)))
+        entitylist.sort()
         ent_vocab = {"UNKNOWN":0,"MASK":1}
         for i,entity in enumerate(entitylist):
             ent_vocab[entity] = i+2
         return path_train[:-4]+"_frequency"+str(frequency)+".csv",path_test[:-4]+"_frequency"+str(frequency)+".csv",ent_vocab
-    path = settings.citation_recommendation_dir
+    path = settings.citation_recommendation_PeerRead_dir
     path_train = os.path.join(path,"train.csv")
     path_test = os.path.join(path,"test.csv")
-    ent_vocab = build_ent_vocab(path_train)
+    ent_vocab = build_ent_vocab(path_train,dataset=args.dataset)
     path_train_frequency5,path_test_frequency5,ent_vocab_frequency5 = extract_by_frequency(path_train,path_test,args.frequency)
-    datasetdict = {"tail":PeerReadDataSet,"random":PeerReadDataSetRANDOM,"both":PeerReadDataSetBOTH}
+    #datasetdict = {"tail":PeerReadDataSet,"random":PeerReadDataSetRANDOM,"both":PeerReadDataSetBOTH}
+    datasetdict = {"tail":PeerReadDataSet}
     cur_dataset = datasetdict[args.mask_type]
     if args.train_data == "full":
         dataset_train = cur_dataset(path_train,ent_vocab=ent_vocab,WINDOW_SIZE=args.WINDOW_SIZE,MAX_LEN=args.MAX_LEN,pretrained_model=args.pretrained_model,mode="train")
@@ -239,7 +243,7 @@ def load_PeerRead_graph_data(args):
         dataset_test = cur_dataset(path_test,ent_vocab=ent_vocab,WINDOW_SIZE=args.WINDOW_SIZE,MAX_LEN=args.MAX_LEN,pretrained_model=args.pretrained_model,mode="test")
     else:
         dataset_test = cur_dataset(path_test_frequency5,ent_vocab=ent_vocab,WINDOW_SIZE=args.WINDOW_SIZE,MAX_LEN=args.MAX_LEN,pretrained_model=args.pretrained_model,mode="test")
-    return dataset_train,dataset_test_frequency5,ent_vocab
+    return dataset_train,dataset_test,ent_vocab
 
 #入力: directory
 def load_AASC_graph_data(args):
@@ -342,6 +346,20 @@ def load_data_intent_identification(model,ent_vocab):
             X.append(np.concatenate([np.array(target_logits.cpu()),np.array(source_logits.cpu())]))
             y.append(intentdict[intent])
     return X,y
+
+def make_adjacent_matrix(train_set):
+    adj = defaultdict(set)
+    for data in train_set.data:
+        token_type_ids = data["token_type_ids"]
+        input_ids = data["input_ids"]
+        masked_lm_labels = data["masked_lm_labels"]
+        for token_type_id,input_id,masked_lm_label in zip(token_type_ids,input_ids,masked_lm_labels):
+            if token_type_id == 1 and masked_lm_label == -1:
+                target_id = input_id
+            elif token_type_id == 1:
+                source_id = masked_lm_label
+        adj[target_id].add(source_id)
+    return adj
 
 
 if __name__ == "__main__":

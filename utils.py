@@ -2,6 +2,9 @@ import os
 import json
 import re
 import pandas as pd
+import settings
+import collections
+from collections import defaultdict
 
 
 def build_label_vocab(data_dir, task_type='re'):
@@ -64,3 +67,17 @@ def build_ent_vocab(path,dataset="AASC"):
     for i,entity in enumerate(entitylist):
         ent_vocab[entity] = i+2
     return ent_vocab
+
+#train dataで何回出てきたかによって正解率はどれくらい変わるのかを検証
+def count_times(args,ent_vocab):
+    #train dataからsource idごとに何回出てきたかを覚える
+    source_times_dict = defaultdict(int)
+    if args.dataset == "AASC":
+        df = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train.csv"),quotechar="'")
+    else:
+        df = pd.read_csv(os.path.join(settings.citation_recommendation_PeerRead_dir,"train.csv"))
+    true_labels_train = list(df["source_id"])
+    true_labels_counter = collections.Counter(true_labels_train)
+    for paper_id in true_labels_counter:
+        source_times_dict[ent_vocab[paper_id]] += true_labels_counter[paper_id]
+    return source_times_dict
