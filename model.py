@@ -100,6 +100,10 @@ class PTBCN(BertForMaskedLM):
             output_hidden_states=True)
         sequence_output = outputs["last_hidden_state"]  # batch x seq_len x hidden_size
         outputs_each_layer = outputs["hidden_states"]
+        """
+        sequence_output = outputs[0]  # batch x seq_len x hidden_size
+        outputs_each_layer = outputs[2]
+        """
         ent_logits = self.ent_lm_head(sequence_output)
         ent_predict = torch.argmax(ent_logits, dim=-1)
         if self.loss_type == "CrossEntropy":

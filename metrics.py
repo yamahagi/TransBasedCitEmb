@@ -4,7 +4,7 @@ from fastNLP.core.utils import _get_func_signature
 from fastNLP.core.utils import _get_func_signature
 from sklearn.metrics import f1_score, precision_recall_fscore_support
 import numpy as np
-import faiss
+#import faiss
 
 
 

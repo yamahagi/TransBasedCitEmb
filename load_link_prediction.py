@@ -13,14 +13,17 @@ import pickle
 import settings
 import json
 
+"""
 import faiss
 from rank_eval import map as map_metrics
 from rank_eval import mrr as mrr_metrics
+from rank_eval.utils import to_typed_list
+from rank_eval import hits_at_k
+"""
+
 import pandas as pd
 import os
 from collections import defaultdict
-from rank_eval.utils import to_typed_list
-from rank_eval import hits_at_k
 
 #extract link prediction data
 #for each node in node classification data, collect all contexts for that
@@ -170,12 +173,12 @@ def load_link_prediction(ent_vocab):
     return link_dict
 
 #get embeddings for each node by taking average of contexts
-def load_data_link_prediction_with_context(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
+def load_data_link_prediction_with_context(args,model,ent_vocab,MAX_LEN,WINDOW_SIZE):
     #それぞれのnodeごとに関連するdataを取り出す
     X_train,y_train,X_test,y_test = load_raw_data()
     #nodeごとにembeddingsを取り出す
-    converted_path_train = os.path.join(settings.citation_recommendation_dir,"SVM_train.json")
-    converted_path_test = os.path.join(settings.citation_recommendation_dir,"SVM_test.json")
+    converted_path_train = os.path.join(settings.citation_recommendation_dir,"SVM_train"+args.pretrained_model+".json")
+    converted_path_test = os.path.join(settings.citation_recommendation_dir,"SVM_test"+args.pretrained_model+".json")
     if os.path.exists(converted_path_train):
         with open(converted_path_train) as f:
             X_train = json.load(f)
@@ -204,7 +207,7 @@ def load_data_link_prediction_from_pkl(ent_vocab):
 
 #paper embeddingsのpathを引数とする
 #entity2idのpathも引数とする
-def save_embeddings(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
+def save_embeddings(args,model,ent_vocab,MAX_LEN,WINDOW_SIZE):
     #link predictionのデータを読み込む
     #それぞれのnodeのembeddingsを読み込む
     print("----loading data----")
@@ -214,10 +217,11 @@ def save_embeddings(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
     print("----making embeddings----")
     paper_embeddings_dict = get_embeddings(model,paper_dict,MAX_LEN,WINDOW_SIZE)
     print("----saving embeddings----")
-    with open("./AASC_embeddings.pkl", "wb") as tf:
+    pkl_name = str(args.dataset)+"embeddings_pretrainedmodel"+str(args.pretrained_model)+"_"+args.mask_type+"_"+args.final_layer+"_"+args.loss_type+".pkl"
+    with open(pkl_name, "wb") as tf:
         pickle.dump(paper_embeddings_dict,tf)
     print("----loading embeddings----")
-    with open("./AASC_embeddings.pkl","rb") as tf:
+    with open(pkl_name,"rb") as tf:
         paper_embeddings_dict = pickle.load(tf)
 
 def link_prediction(model,ent_vocab,MAX_LEN,WINDOW_SIZE):

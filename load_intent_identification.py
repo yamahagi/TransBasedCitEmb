@@ -22,22 +22,27 @@ from collections import Counter
 from itertools import product
 import collections
 
-def load_raw_data():
+def load_raw_data(args):
     dftrain5 = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train_frequency5.csv"),quotechar="'")
     dftrain = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train.csv"),quotechar="'")
     dftest = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"test.csv"),quotechar="'")
-    f = open(os.path.join(settings.intent_identification_dir,"id2intent.txt"))
     tail_train5_dict = defaultdict(dict)
     head_train5_dict = defaultdict(dict)
+    tail_train_dict = defaultdict(dict)
+    head_train_dict = defaultdict(dict)
     tail_all_dict = defaultdict(dict)
     head_all_dict = defaultdict(dict)
     both_all_dict = defaultdict(dict)
     for source_id,target_id,left_citated_text,right_citated_text in zip(dftrain5["source_id"],dftrain5["target_id"],dftrain5["left_citated_text"],dftrain5["right_citated_text"]):
         tail_train5_dict[source_id][target_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
         head_train5_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
+        tail_train_dict[source_id][target_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
+        head_train_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
     for source_id,target_id,left_citated_text,right_citated_text in zip(dftrain["source_id"],dftrain["target_id"],dftrain["left_citated_text"],dftrain["right_citated_text"]):
         tail_all_dict[source_id][target_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
         head_all_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
+        tail_train_dict[source_id][target_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
+        head_train_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
         both_all_dict[source_id][target_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
         both_all_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
     for source_id,target_id,left_citated_text,right_citated_text in zip(dftest["source_id"],dftest["target_id"],dftest["left_citated_text"],dftest["right_citated_text"]):
@@ -47,13 +52,14 @@ def load_raw_data():
         both_all_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
     tail5_number = 0
     head5_number = 0
-    tail_all_number = 0
-    head_all_number = 0
+    tail_train_number = 0
+    head_train_number = 0
     X = []
     y = []
     intentdict = {}
     intentn = -1
     paper_dict = {}
+    f = open(os.path.join(settings.intent_identification_dir,"id2intent.txt"))
     for i,line in enumerate(f):
         if i == 0:
             continue
@@ -66,6 +72,7 @@ def load_raw_data():
             intentn += 1
             intentdict[intent] = intentn
         y.append(intentdict[intent])
+    for (target_id,source_id) in X:
         for paper in [target_id,source_id]:
             if paper not in paper_dict:
                 elements = []
@@ -75,12 +82,88 @@ def load_raw_data():
                 elif paper in head_train5_dict and head_train5_dict[paper] != {}:
                     head5_number += 1
                     elements = [{"data":head_train5_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_train5_dict[paper].keys())]
-                elif paper in tail_all_dict and tail_all_dict[paper] != {}:
-                    tail_all_number += 1
-                    elements = [{"data":tail_all_dict[paper][target_id],"target_id":target_id,"source_id":paper,"th":"tail"} for target_id in list(tail_all_dict[paper].keys())]
-                elif paper in head_all_dict and head_all_dict[paper] != {}:
-                    head_all_number += 1
-                    elements = [{"data":head_all_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_all_dict[paper].keys())]
+                elif paper in tail_train_dict and tail_train_dict[paper] != {}:
+                    tail_train_number += 1
+                    elements = [{"data":tail_train_dict[paper][target_id],"target_id":target_id,"source_id":paper,"th":"tail"} for target_id in list(tail_train_dict[paper].keys())]
+                elif paper in head_train_dict and head_train_dict[paper] != {}:
+                    head_train_number += 1
+                    elements = [{"data":head_train_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_train_dict[paper].keys())]
+                else:
+                    print("Unfound: "+paper)
+                paper_dict[paper] = elements
+    return X,y,paper_dict
+
+def load_raw_data_PeerRead(args):
+    dftrain = pd.read_csv(os.path.join(settings.citation_recommendation_PeerRead_dir,"train.csv"))
+    dftest = pd.read_csv(os.path.join(settings.citation_recommendation_PeerRead_dir,"test.csv"))
+    tail_train_dict = defaultdict(dict)
+    head_train_dict = defaultdict(dict)
+    for source_id,target_id,left_citated_text,right_citated_text in zip(dftrain["source_id"],dftrain["target_id"],dftrain["left_citated_text"],dftrain["right_citated_text"]):
+        tail_train_dict[source_id][target_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
+        head_train_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
+    tail_train_number = 0
+    head_train_number = 0
+    X = []
+    y = []
+    intentdict = {}
+    intentn = -1
+    paper_dict = {}
+    df = pd.read_csv(os.path.join(settings.citation_recommendation_PeerRead_dir,"test_intent_annotated.csv"))
+    for target_id,source_id,intent in zip(df["target_id"],df["source_id"],df["intent"]):
+        intent = int(intent)
+        X.append((target_id,source_id))
+        if intent not in intentdict:
+            intentn += 1
+            intentdict[intent] = intentn
+        y.append(intentdict[intent])
+    for (target_id,source_id) in X:
+        for paper in [target_id,source_id]:
+            if paper not in paper_dict:
+                elements = []
+                if paper in tail_train_dict and tail_train_dict[paper] != {}:
+                    tail_train_number += 1
+                    elements = [{"data":tail_train_dict[paper][target_id],"target_id":target_id,"source_id":paper,"th":"tail"} for target_id in list(tail_train_dict[paper].keys())]
+                elif paper in head_train_dict and head_train_dict[paper] != {}:
+                    head_train_number += 1
+                    elements = [{"data":head_train_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_train_dict[paper].keys())]
+                else:
+                    print("Unfound: "+paper)
+                paper_dict[paper] = elements
+    return X,y,paper_dict
+
+def load_raw_data_SYNTHCI_AASC(args):
+    dftrain = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"train.csv"),quotechar="'")
+    dftest = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"test.csv"),quotechar="'")
+    tail_train_dict = defaultdict(dict)
+    head_train_dict = defaultdict(dict)
+    for source_id,target_id,left_citated_text,right_citated_text in zip(dftrain["source_id"],dftrain["target_id"],dftrain["left_citated_text"],dftrain["right_citated_text"]):
+        tail_train_dict[source_id][target_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
+        head_train_dict[target_id][source_id] = {"left_citated_text":left_citated_text,"right_citated_text":right_citated_text}
+    tail_train_number = 0
+    head_train_number = 0
+    X = []
+    y = []
+    intentdict = {}
+    intentn = -1
+    paper_dict = {}
+    df = pd.read_csv(os.path.join(settings.citation_recommendation_dir,"test_intent_annotated.csv"))
+    for target_id,source_id,intent in zip(df["target_id"],df["source_id"],df["intent"]):
+        intent = int(intent)
+        X.append((target_id,source_id))
+        if intent not in intentdict:
+            intentn += 1
+            intentdict[intent] = intentn
+        y.append(intentdict[intent])
+    for (target_id,source_id) in X:
+        for paper in [target_id,source_id]:
+            if paper not in paper_dict:
+                elements = []
+                if paper in tail_train_dict and tail_train_dict[paper] != {}:
+                    tail_train_number += 1
+                    elements = [{"data":tail_train_dict[paper][target_id],"target_id":target_id,"source_id":paper,"th":"tail"} for target_id in list(tail_train_dict[paper].keys())]
+                elif paper in head_train_dict and head_train_dict[paper] != {}:
+                    head_train_number += 1
+                    elements = [{"data":head_train_dict[paper][source_id],"target_id":paper,"source_id":source_id,"th":"head"} for source_id in list(head_train_dict[paper].keys())]
                 else:
                     print("Unfound: "+paper)
                 paper_dict[paper] = elements

@@ -259,15 +259,34 @@ def get_embeddings_all_layer(model,datas,MAX_LEN,WINDOW_SIZE):
                 print(i)
     return X_embeddings
 
+def load_papers(args):
+    if args.dataset == "AASC":
+        ftrain = open(os.path.join(settings.node_classification_dir,"title2task_train.txt"))
+        ftest = open(os.path.join(settings.node_classification_dir,"title2task_test.txt"))
+    else:
+        ftrain = open(os.path.join(settings.node_classification_PeerRead_dir,"title2task_PWCode_train.txt"))
+        ftest = open(os.path.join(settings.node_classification_PeerRead_dir,"title2task_PWCode_test.txt"))
+    papers_train = []
+    for i,line in enumerate(ftrain):
+        l = line[:-1].split("\t")
+        paper_id = l[0]
+        papers_train.append(paper_id)
+    papers_test = []
+    for i,line in enumerate(ftest):
+        l = line[:-1].split("\t")
+        paper_id = l[0]
+        papers_test.append(paper_id)
+    return papers_train,papers_test
+
 #get embeddings for each node by taking average of contexts
 def load_data_SVM_with_context(args,model,ent_vocab,MAX_LEN,WINDOW_SIZE):
     X_train,y_train,X_test,y_test = load_raw_data(args)
     if args.dataset == "AASC":
-        converted_path_train = os.path.join(settings.citation_recommendation_dir,"SVM_train.json")
-        converted_path_test = os.path.join(settings.citation_recommendation_dir,"SVM_test.json")
+        converted_path_train = os.path.join(settings.citation_recommendation_dir,"SVM_train_"+args.pretrained_model+".json")
+        converted_path_test = os.path.join(settings.citation_recommendation_dir,"SVM_test_"+args.pretrained_model+".json")
     else:
-        converted_path_train = os.path.join(settings.citation_recommendation_PeerRead_dir,"SVM_train.json")
-        converted_path_test = os.path.join(settings.citation_recommendation_PeerRead_dir,"SVM_test.json")
+        converted_path_train = os.path.join(settings.citation_recommendation_PeerRead_dir,"SVM_train_"+args.pretrained_model+".json")
+        converted_path_test = os.path.join(settings.citation_recommendation_PeerRead_dir,"SVM_test_"+args.pretrained_model+".json")
     if os.path.exists(converted_path_train):
         with open(converted_path_train) as f:
             X_train = json.load(f)
@@ -284,6 +303,38 @@ def load_data_SVM_with_context(args,model,ent_vocab,MAX_LEN,WINDOW_SIZE):
             json.dump(X_test,f)
     X_train = get_embeddings(model,X_train,MAX_LEN,WINDOW_SIZE)
     X_test = get_embeddings(model,X_test,MAX_LEN,WINDOW_SIZE)
+    papers_train,papers_test = load_papers(args)
+    return X_train,y_train,X_test,y_test,papers_train,papers_test
+
+def load_data_SVM_from_pkl():
+    paper_embeddings_dict = pickle.load(open(os.path.join(settings.citation_recommendation_dir,"AASC_embeddings.pkl"),"rb"))
+    ftrain = open(os.path.join(settings.node_classification_dir,"title2task_train.txt"))
+    ftest = open(os.path.join(settings.node_classification_dir,"title2task_test.txt"))
+    X_train = []
+    y_train = []
+    taskdict = {}
+    taskn = -1
+    alln = 0
+    for line in ftrain:
+        l = line[:-1].split("\t")
+        paper = l[0]
+        task = l[1]
+        X_train.append(paper_embeddings_dict[paper])
+        if task not in taskdict:
+            taskn += 1
+            taskdict[task] = taskn
+        y_train.append(taskdict[task])
+    X_test = []
+    y_test = []
+    for line in ftest:
+        l = line[:-1].split("\t")
+        paper = l[0]
+        task = l[1]
+        X_test.append(paper_embeddings_dict[paper])
+        if task not in taskdict:
+            taskn += 1
+            taskdict[task] = taskn
+        y_test.append(taskdict[task])
     return X_train,y_train,X_test,y_test
 
 def load_data_SVM_from_pkl():
@@ -318,10 +369,10 @@ def load_data_SVM_from_pkl():
     return X_train,y_train,X_test,y_test
 
 #get embeddings for each node by taking average of contexts for all layer
-def load_data_SVM_with_context_all_layer(model,ent_vocab,MAX_LEN,WINDOW_SIZE):
+def load_data_SVM_with_context_all_layer(arg,smodel,ent_vocab,MAX_LEN,WINDOW_SIZE):
     X_train,y_train,X_test,y_test = load_raw_data()
-    converted_path_train = os.path.join(settings.citation_recommendation_dir,"SVM_train.json")
-    converted_path_test = os.path.join(settings.citation_recommendation_dir,"SVM_test.json")
+    converted_path_train = os.path.join(settings.citation_recommendation_dir,"SVM_train"+args.pretrained_model+".json")
+    converted_path_test = os.path.join(settings.citation_recommendation_dir,"SVM_test"+args.pretrained_model+".json")
     if os.path.exists(converted_path_train):
         with open(converted_path_train) as f:
             X_train = json.load(f)
